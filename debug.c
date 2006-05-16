@@ -19,6 +19,7 @@
 
 typedef struct {
     DebugFn fn;
+    GDestroyNotify destroy_fn;
     gpointer user_data;
     guint id;
 } DebugHandler;
@@ -26,7 +27,9 @@ typedef struct {
 static GSList *handlers = NULL;
 
 guint
-debug_add_handler (DebugFn fn, gpointer user_data)
+debug_add_handler_full (DebugFn fn,
+                        GDestroyNotify destroy_func,
+                        gpointer user_data)
 {
     DebugHandler *handler;
 
@@ -34,6 +37,7 @@ debug_add_handler (DebugFn fn, gpointer user_data)
 
     handler = g_new0 (DebugHandler, 1);
     handler->fn = fn;
+    handler->destroy_fn = destroy_func;
     handler->user_data = user_data;
 
     if (handlers)
@@ -44,7 +48,7 @@ debug_add_handler (DebugFn fn, gpointer user_data)
     handlers = g_slist_prepend (handlers, handler);
 
     return handler->id;
-}
+}    
 
 void
 debug_remove_handler (guint id)
@@ -56,6 +60,8 @@ debug_remove_handler (guint id)
 
         if (handler->id == id) {
             handlers = g_slist_remove_link (handlers, iter);
+            if (handler->destroy_fn)
+                handler->destroy_fn (handler->user_data);
             g_free (handler);
             return;
         }

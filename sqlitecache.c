@@ -22,15 +22,20 @@
 #include "db.h"
 #include "package.h"
 
+typedef void (*ProgressFn) (guint32 current, guint32 total, gpointer user_data);
 
 typedef struct {
     sqlite3 *db;
     sqlite3_stmt *remove_handle;
-    int add_count;
-    int del_count;
+    guint32 count_from_md;
+    guint32 packages_seen;
+    guint32 add_count;
+    guint32 del_count;
     GHashTable *current_packages;
     GHashTable *all_packages;
     GTimer *timer;
+    ProgressFn progress_cb;
+    gpointer user_data;
 } UpdateInfo;
 
 static void
@@ -48,6 +53,8 @@ update_info_init (UpdateInfo *info)
         return;
     }
 
+    info->count_from_md = 0;
+    info->packages_seen = 0;
     info->add_count = 0;
     info->del_count = 0;
     info->current_packages = yum_db_read_package_ids (info->db);
@@ -82,6 +89,14 @@ static void
 update_info_remove_old_entries (UpdateInfo *info)
 {
     g_hash_table_foreach (info->current_packages, remove_entry, info);
+}
+
+static void
+count_cb (guint32 count, gpointer user_data)
+{
+    UpdateInfo *info = (UpdateInfo *) user_data;
+
+    info->count_from_md = count;
 }
 
 static void
@@ -175,6 +190,11 @@ add_package (Package *package, gpointer user_data)
         write_package_to_db (info, package);
         info->add_count++;
     }
+
+    if (info->count_from_md > 0 && info->progress_cb)
+        info->progress_cb (++info->packages_seen,
+                           info->count_from_md,
+                           info->user_data);
 }
 
 static void
@@ -189,7 +209,10 @@ package_writer_info_clean (PackageWriterInfo *info)
 }
 
 static char *
-update_primary (const char *md_filename, const char *checksum)
+update_primary (const char *md_filename,
+                const char *checksum,
+                ProgressFn progress_cb,
+                gpointer user_data)
 {
     PackageWriterInfo info;
     UpdateInfo *update_info = &info.update_info;
@@ -212,10 +235,12 @@ update_primary (const char *md_filename, const char *checksum)
     yum_db_dbinfo_clear (update_info->db);
 
     update_info_init (update_info);
+    update_info->progress_cb = progress_cb;
+    update_info->user_data = user_data;
     package_writer_info_init (&info, update_info->db);
 
     sqlite3_exec (update_info->db, "BEGIN", NULL, NULL, NULL);
-    yum_xml_parse_primary (md_filename, add_package, &info);
+    yum_xml_parse_primary (md_filename, count_cb, add_package, &info);
     sqlite3_exec (update_info->db, "COMMIT", NULL, NULL, NULL);
 
     package_writer_info_clean (&info);
@@ -255,10 +280,18 @@ update_filelist_cb (Package *p, gpointer user_data)
         yum_db_filelists_write (update_info->db, info->file_handle, p);
         update_info->add_count++;
     }
+
+    if (update_info->count_from_md > 0 && update_info->progress_cb)
+        update_info->progress_cb (++update_info->packages_seen,
+                                  update_info->count_from_md,
+                                  update_info->user_data);
 }
 
 static char *
-update_filelist (const char *md_filename, const char *checksum)
+update_filelist (const char *md_filename,
+                 const char *checksum,
+                 ProgressFn progress_cb,
+                 gpointer user_data)
 {
     FileListInfo info;
     UpdateInfo *update_info = &info.update_info;
@@ -281,11 +314,16 @@ update_filelist (const char *md_filename, const char *checksum)
     yum_db_dbinfo_clear (update_info->db);
 
     update_info_init (update_info);
+    update_info->progress_cb = progress_cb;
+    update_info->user_data = user_data;
     info.pkg_handle = yum_db_package_ids_prepare (update_info->db);
     info.file_handle = yum_db_filelists_prepare (update_info->db);
 
     sqlite3_exec (update_info->db, "BEGIN", NULL, NULL, NULL);
-    yum_xml_parse_filelists (md_filename, update_filelist_cb, &info);
+    yum_xml_parse_filelists (md_filename,
+                             count_cb,
+                             update_filelist_cb,
+                             &info);
     sqlite3_exec (update_info->db, "COMMIT", NULL, NULL, NULL);
 
     sqlite3_finalize (info.pkg_handle);
@@ -326,10 +364,18 @@ update_other_cb (Package *p, gpointer user_data)
         yum_db_changelog_write (update_info->db, info->changelog_handle, p);
         update_info->add_count++;
     }
+
+    if (update_info->count_from_md > 0 && update_info->progress_cb)
+        update_info->progress_cb (++update_info->packages_seen,
+                                  update_info->count_from_md,
+                                  update_info->user_data);
 }
 
 static char *
-update_other (const char *md_filename, const char *checksum)
+update_other (const char *md_filename,
+              const char *checksum,
+              ProgressFn progress_cb,
+              gpointer user_data)
 {
     UpdateOtherInfo info;
     UpdateInfo *update_info = &info.update_info;
@@ -352,11 +398,16 @@ update_other (const char *md_filename, const char *checksum)
     yum_db_dbinfo_clear (update_info->db);
 
     update_info_init (update_info);
+    update_info->progress_cb = progress_cb;
+    update_info->user_data = user_data;
     info.pkg_handle = yum_db_package_ids_prepare (update_info->db);
     info.changelog_handle = yum_db_changelog_prepare (update_info->db);
 
     sqlite3_exec (update_info->db, "BEGIN", NULL, NULL, NULL);
-    yum_xml_parse_other (md_filename, update_other_cb, &info);
+    yum_xml_parse_other (md_filename,
+                         count_cb,
+                         update_other_cb,
+                         &info);
     sqlite3_exec (update_info->db, "COMMIT", NULL, NULL, NULL);
 
     sqlite3_finalize (info.pkg_handle);
@@ -374,6 +425,53 @@ update_other (const char *md_filename, const char *checksum)
 
 /*********************************************************************/
 
+static gboolean
+py_parse_args (PyObject *args,
+               const char **md_filename,
+               const char **checksum,
+               PyObject **log,
+               PyObject **progress)
+{
+    PyObject *callback;
+
+    if (!PyArg_ParseTuple (args, "ssO", md_filename, checksum, &callback))
+        return FALSE;
+
+    if (PyObject_HasAttrString (callback, "log")) {
+        *log = PyObject_GetAttrString (callback, "log");
+
+        if (!PyCallable_Check (*log)) {
+            PyErr_SetString (PyExc_TypeError, "parameter must be callable");
+            return FALSE;
+        }
+    }
+
+    if (PyObject_HasAttrString (callback, "progressbar")) {
+        *progress = PyObject_GetAttrString (callback, "progressbar");
+
+        if (!PyCallable_Check (*progress)) {
+            PyErr_SetString (PyExc_TypeError, "parameter must be callable");
+            return FALSE;
+        }
+    }
+
+    return TRUE;
+}
+
+static void
+progress_cb (guint32 current, guint32 total, gpointer user_data)
+{
+    PyObject *progress = (PyObject *) user_data;
+    PyObject *arglist;
+    PyObject *result;
+
+    arglist = Py_BuildValue ("(ii)", current, total);
+    result = PyEval_CallObject (progress, arglist);
+    Py_DECREF (arglist);
+
+    Py_XDECREF (result);
+}
+
 static void
 debug_cb (const char *message,
           DebugLevel level,
@@ -387,57 +485,34 @@ debug_cb (const char *message,
     result = PyEval_CallObject (callback, arglist);
     Py_DECREF (arglist);
 
-    if (result) {
-        Py_DECREF (result);
-    }
-}
-
-static PyObject *
-py_log_handler_add (PyObject *self, PyObject *args)
-{
-    PyObject *callback;
-    int id;
-
-    if (!PyArg_ParseTuple (args, "O", &callback))
-        return NULL;
-
-    if (!PyCallable_Check (callback)) {
-        PyErr_SetString (PyExc_TypeError, "parameter must be callable");
-        return NULL;
-    }
-
-    Py_XINCREF (callback);
-    id = debug_add_handler (debug_cb, callback);
-
-    return Py_BuildValue ("i", id);
-}
-
-static PyObject *
-py_log_handler_remove (PyObject *self, PyObject *args)
-{
-    int id;
-
-    if (!PyArg_ParseTuple (args, "i", &id))
-        return NULL;
-
-    debug_remove_handler (id);
-
-    Py_INCREF (Py_None);
-    return Py_None;
+    Py_XDECREF (result);
 }
 
 static PyObject *
 py_update_primary (PyObject *self, PyObject *args)
 {
-    const char *md_filename;
-    const char *checksum;
+    const char *md_filename = NULL;
+    const char *checksum = NULL;
+    PyObject *log = NULL;
+    PyObject *progress = NULL;
+    int log_id = 0;
     char *db_filename;
     PyObject *ret;
 
-    if (!PyArg_ParseTuple (args, "ss", &md_filename, &checksum))
+    if (!py_parse_args (args, &md_filename, &checksum, &log, &progress))
         return NULL;
 
-    db_filename = update_primary (md_filename, checksum);
+    if (log)
+        log_id = debug_add_handler (debug_cb, log);
+
+    db_filename = update_primary (md_filename,
+                                  checksum,
+                                  progress != NULL ? progress_cb : NULL,
+                                  progress);
+
+    if (log_id)
+        debug_remove_handler (log_id);
+
     if (db_filename) {
         ret = Py_BuildValue ("s", db_filename);
         g_free (db_filename);
@@ -452,15 +527,28 @@ py_update_primary (PyObject *self, PyObject *args)
 static PyObject *
 py_update_filelist (PyObject *self, PyObject *args)
 {
-    const char *md_filename;
-    const char *checksum;
+    const char *md_filename = NULL;
+    const char *checksum = NULL;
+    PyObject *log = NULL;
+    PyObject *progress = NULL;
+    int log_id = 0;
     char *db_filename;
     PyObject *ret;
 
-    if (!PyArg_ParseTuple (args, "ss", &md_filename, &checksum))
+    if (!py_parse_args (args, &md_filename, &checksum, &log, &progress))
         return NULL;
 
-    db_filename = update_filelist (md_filename, checksum);
+    if (log)
+        log_id = debug_add_handler (debug_cb, log);
+
+    db_filename = update_filelist (md_filename,
+                                   checksum,
+                                   progress != NULL ? progress_cb : NULL,
+                                   progress);
+
+    if (log_id)
+        debug_remove_handler (log_id);
+
     if (db_filename) {
         ret = Py_BuildValue ("s", db_filename);
         g_free (db_filename);
@@ -475,15 +563,28 @@ py_update_filelist (PyObject *self, PyObject *args)
 static PyObject *
 py_update_other (PyObject *self, PyObject *args)
 {
-    const char *md_filename;
-    const char *checksum;
+    const char *md_filename = NULL;
+    const char *checksum = NULL;
+    PyObject *log = NULL;
+    PyObject *progress = NULL;
+    int log_id = 0;
     char *db_filename;
     PyObject *ret;
 
-    if (!PyArg_ParseTuple (args, "ss", &md_filename, &checksum))
+    if (!py_parse_args (args, &md_filename, &checksum, &log, &progress))
         return NULL;
 
-    db_filename = update_other (md_filename, checksum);
+    if (log)
+        log_id = debug_add_handler (debug_cb, log);
+
+    db_filename = update_other (md_filename,
+                                checksum,
+                                progress != NULL ? progress_cb : NULL,
+                                progress);
+
+    if (log_id)
+        debug_remove_handler (log_id);
+
     if (db_filename) {
         ret = Py_BuildValue ("s", db_filename);
         g_free (db_filename);
@@ -496,16 +597,13 @@ py_update_other (PyObject *self, PyObject *args)
 }
 
 static PyMethodDef SqliteMethods[] = {
-    {"log_handler_add", py_log_handler_add, METH_VARARGS,
-     "Add log handler."},
-    {"log_handler_remove", py_log_handler_remove, METH_VARARGS,
-     "Remove log handler."},
     {"update_primary", py_update_primary, METH_VARARGS,
      "Parse YUM primary.xml metadata."},
     {"update_filelist", py_update_filelist, METH_VARARGS,
      "Parse YUM filelists.xml metadata."},
     {"update_other", py_update_other, METH_VARARGS,
      "Parse YUM other.xml metadata."},
+
     {NULL, NULL, 0, NULL}
 };
 

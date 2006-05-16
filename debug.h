@@ -31,7 +31,13 @@ typedef void (*DebugFn) (const char *message,
                          DebugLevel level,
                          gpointer user_data);
 
-guint debug_add_handler (DebugFn fn, gpointer user_data);
+guint debug_add_handler_full (DebugFn fn,
+                              GDestroyNotify destroy_func,
+                              gpointer user_data);
+
+#define debug_add_handler(fn, user_data) \
+    debug_add_handler_full(fn, NULL, user_data)
+
 void  debug_remove_handler (guint id);
 
 void debug (DebugLevel level, const char *format, ...);

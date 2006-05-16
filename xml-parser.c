@@ -27,6 +27,19 @@
 
 #define PACKAGE_FIELD_SIZE 1024
 
+static guint32
+string_to_guint32_with_default (const char *n, guint32 def)
+{
+    char *ret;
+    guint32 z;
+
+    z = strtoul (n, &ret, 10);
+    if (*ret != '\0')
+        return def;
+    else
+        return z;
+}
+
 typedef enum {
     PRIMARY_PARSER_TOPLEVEL = 0,
     PRIMARY_PARSER_PACKAGE,
@@ -37,7 +50,8 @@ typedef enum {
 typedef struct {
     xmlParserCtxt *xml_context;
     PrimarySAXContextState state;
-    PackageFn callback;
+    CountFn count_fn;
+    PackageFn package_fn;
     gpointer user_data;
 
     Package *current_package;
@@ -58,6 +72,23 @@ primary_parser_toplevel_start (PrimarySAXContext *ctx,
         ctx->state = PRIMARY_PARSER_PACKAGE;
 
         ctx->current_package = package_new ();
+    }
+
+    else if (ctx->count_fn && !strcmp (name, "metadata")) {
+        int i;
+        const char *attr;
+        const char *value;
+
+        for (i = 0; attrs && attrs[i]; i++) {
+            attr = attrs[i];
+            value = attrs[++i];
+
+            if (!strcmp (attr, "packages")) {
+                ctx->count_fn (string_to_guint32_with_default (value, 0),
+                               ctx->user_data);
+                break;
+            }
+        }
     }
 }
 
@@ -282,8 +313,8 @@ primary_parser_package_end (PrimarySAXContext *ctx, const char *name)
     g_assert (p != NULL);
 
     if (!strcmp (name, "package")) {
-        if (ctx->callback)
-            ctx->callback (p, ctx->user_data);
+        if (ctx->package_fn)
+            ctx->package_fn (p, ctx->user_data);
 
         package_free (p);
         ctx->current_package = NULL;
@@ -468,14 +499,16 @@ static xmlSAXHandler primary_sax_handler = {
 
 void
 yum_xml_parse_primary (const char *filename,
-                       PackageFn callback,
+                       CountFn count_callback,
+                       PackageFn package_callback,
                        gpointer user_data)
 {
     PrimarySAXContext ctx;
     int rc;
 
     ctx.state = PRIMARY_PARSER_TOPLEVEL;
-    ctx.callback = callback;
+    ctx.count_fn = count_callback;
+    ctx.package_fn = package_callback;
     ctx.user_data = user_data;
     ctx.current_package = NULL;
     ctx.current_dep_list = NULL;
@@ -504,7 +537,8 @@ typedef enum {
 typedef struct {
     xmlParserCtxt *xml_context;
     FilelistSAXContextState state;
-    PackageFn callback;
+    CountFn count_fn;
+    PackageFn package_fn;
     gpointer user_data;
 
     Package *current_package;
@@ -540,6 +574,23 @@ filelist_parser_toplevel_start (FilelistSAXContext *ctx,
                 p->name = g_string_chunk_insert (p->chunk, value);
             else if (!strcmp (attr, "arch"))
                 p->arch = g_string_chunk_insert (p->chunk, value);
+        }
+    }
+
+    else if (ctx->count_fn && !strcmp (name, "filelists")) {
+        int i;
+        const char *attr;
+        const char *value;
+
+        for (i = 0; attrs && attrs[i]; i++) {
+            attr = attrs[i];
+            value = attrs[++i];
+
+            if (!strcmp (attr, "packages")) {
+                ctx->count_fn (string_to_guint32_with_default (value, 0),
+                               ctx->user_data);
+                break;
+            }
         }
     }
 }
@@ -612,8 +663,8 @@ filelist_parser_package_end (FilelistSAXContext *ctx, const char *name)
     g_assert (p != NULL);
 
     if (!strcmp (name, "package")) {
-        if (ctx->callback)
-            ctx->callback (p, ctx->user_data);
+        if (ctx->package_fn)
+            ctx->package_fn (p, ctx->user_data);
 
         package_free (p);
         ctx->current_package = NULL;
@@ -722,14 +773,16 @@ static xmlSAXHandler filelist_sax_handler = {
 
 void
 yum_xml_parse_filelists (const char *filename,
-                         PackageFn callback,
+                         CountFn count_callback,
+                         PackageFn package_callback,
                          gpointer user_data)
 {
     FilelistSAXContext ctx;
     int rc;
 
     ctx.state = FILELIST_PARSER_TOPLEVEL;
-    ctx.callback = callback;
+    ctx.count_fn = count_callback;
+    ctx.package_fn = package_callback;
     ctx.user_data = user_data;
     ctx.current_package = NULL;
     ctx.current_file = NULL;
@@ -759,7 +812,8 @@ typedef enum {
 typedef struct {
     xmlParserCtxt *xml_context;
     OtherSAXContextState state;
-    PackageFn callback;
+    CountFn count_fn;
+    PackageFn package_fn;
     gpointer user_data;
 
     Package *current_package;
@@ -795,6 +849,23 @@ other_parser_toplevel_start (OtherSAXContext *ctx,
                 p->name = g_string_chunk_insert (p->chunk, value);
             else if (!strcmp (attr, "arch"))
                 p->arch = g_string_chunk_insert (p->chunk, value);
+        }
+    }
+
+    else if (ctx->count_fn && !strcmp (name, "otherdata")) {
+        int i;
+        const char *attr;
+        const char *value;
+
+        for (i = 0; attrs && attrs[i]; i++) {
+            attr = attrs[i];
+            value = attrs[++i];
+
+            if (!strcmp (attr, "packages")) {
+                ctx->count_fn (string_to_guint32_with_default (value, 0),
+                               ctx->user_data);
+                break;
+            }
         }
     }
 }
@@ -874,8 +945,8 @@ other_parser_package_end (OtherSAXContext *ctx, const char *name)
         if (p->changelogs)
             p->changelogs = g_slist_reverse (p->changelogs);
 
-        if (ctx->callback)
-            ctx->callback (p, ctx->user_data);
+        if (ctx->package_fn)
+            ctx->package_fn (p, ctx->user_data);
 
         package_free (p);
         ctx->current_package = NULL;
@@ -982,14 +1053,16 @@ static xmlSAXHandler other_sax_handler = {
 
 void
 yum_xml_parse_other (const char *filename,
-                     PackageFn callback,
+                     CountFn count_callback,
+                     PackageFn package_callback,
                      gpointer user_data)
 {
     OtherSAXContext ctx;
     int rc;
 
     ctx.state = OTHER_PARSER_TOPLEVEL;
-    ctx.callback = callback;
+    ctx.count_fn = count_callback;
+    ctx.package_fn = package_callback;
     ctx.user_data = user_data;
     ctx.current_package = NULL;
     ctx.current_entry = NULL;

@@ -20,18 +20,23 @@
 
 #include "package.h"
 
+typedef void (*CountFn) (guint32 count, gpointer data);
+
 void
 yum_xml_parse_primary (const char *filename,
-                       PackageFn callback,
+                       CountFn count_callback,
+                       PackageFn package_callback,
                        gpointer user_data);
 
 void
 yum_xml_parse_filelists (const char *filename,
-                         PackageFn callback,
+                         CountFn count_callback,
+                         PackageFn package_callback,
                          gpointer user_data);
 
 void yum_xml_parse_other (const char *filename,
-                          PackageFn callback,
+                          CountFn count_callback,
+                          PackageFn package_callback,
                           gpointer user_data);
 
 #endif /* __YUM_XML_PARSER_H__ */
