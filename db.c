@@ -207,6 +207,7 @@ yum_db_open (const char *path,
             case DB_STATUS_ERROR:
                 sqlite3_close (db);
                 db = NULL;
+                unlink (path);
                 break;
             }
         }

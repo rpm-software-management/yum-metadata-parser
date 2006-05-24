@@ -1,0 +1,12 @@
+2006-05-24  Tambet Ingo  <tambet@ximian.com>
+
+	* ChangeLog: Start keeping change log.
+
+	* sqlitecache.c (update_primary): Nullify the update info structure,
+	so we don't find garbage from it on freeing.
+	(update_filelist): Ditto.
+	(update_other): Ditto.
+
+	* db.c (yum_db_open): Delete the cache file if the dbversion
+	does not match.
+

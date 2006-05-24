@@ -249,6 +249,8 @@ update_primary (const char *md_filename,
     UpdateInfo *update_info = &info.update_info;
     char *db_filename;
 
+    memset (&info, 0, sizeof (PackageWriterInfo));
+
     db_filename = yum_db_filename (md_filename);
     update_info->db = yum_db_open (db_filename, checksum,
                                    yum_db_create_primary_tables,
@@ -338,6 +340,8 @@ update_filelist (const char *md_filename,
     FileListInfo info;
     UpdateInfo *update_info = &info.update_info;
     char *db_filename;
+
+    memset (&info, 0, sizeof (FileListInfo));
 
     db_filename = yum_db_filename (md_filename);
     update_info->db = yum_db_open (db_filename, checksum,
@@ -437,6 +441,8 @@ update_other (const char *md_filename,
     UpdateOtherInfo info;
     UpdateInfo *update_info = &info.update_info;
     char *db_filename;
+
+    memset (&info, 0, sizeof (UpdateOtherInfo));
 
     db_filename = yum_db_filename (md_filename);
     update_info->db = yum_db_open (db_filename, checksum,
