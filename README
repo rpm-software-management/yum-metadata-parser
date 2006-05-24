@@ -1,0 +1,19 @@
+YUM metadata parser written in C.
+
+* Why? 
+The biggest complaint people have with YUM is often the performance of parsing
+the metadata. This implementation should be ~10 times faster, parsing the
+primary.xml file under 1 second usually, filelists.xml under 3 seconds and
+other.xml under 4 seconds. It uses a lot less memory as well, some testings
+I have done show it uses ~4mb instead of 40mb standard YUM uses.
+
+* How?
+Should be really easy:
+python setup.py build
+sudo python setup.py install --prefix=/usr
+
+(Assuming you python prefix is /usr).
+
+The next time you use yum, it regenerates the sqlitecache because the database
+schema is slightly different.
+
