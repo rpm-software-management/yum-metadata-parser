@@ -22,6 +22,9 @@
 #include "db.h"
 #include "package.h"
 
+/* Make room for 2500 package ids, 40 bytes + '\0' each */
+#define PACKAGE_IDS_CHUNK 41 * 2500
+
 typedef void (*ProgressFn) (guint32 current, guint32 total, gpointer user_data);
 
 typedef struct {
@@ -33,13 +36,14 @@ typedef struct {
     guint32 del_count;
     GHashTable *current_packages;
     GHashTable *all_packages;
+    GStringChunk *package_ids_chunk;
     GTimer *timer;
     ProgressFn progress_cb;
     gpointer user_data;
 } UpdateInfo;
 
 static void
-update_info_init (UpdateInfo *info)
+update_info_init (UpdateInfo *info, GError **err)
 {
     const char *sql;
     int rc;
@@ -47,9 +51,10 @@ update_info_init (UpdateInfo *info)
     sql = "DELETE FROM packages WHERE pkgKey = ?";
     rc = sqlite3_prepare (info->db, sql, -1, &info->remove_handle, NULL);
     if (rc != SQLITE_OK) {
-        debug (DEBUG_LEVEL_WARNING,
-               "Can not prepare package removal clause: %s",
-               sqlite3_errmsg (info->db));
+        g_set_error (err, YUM_DB_ERROR, YUM_DB_ERROR,
+                     "Can not prepare changelog insertion: %s",
+                     sqlite3_errmsg (info->db));
+        sqlite3_finalize (info->remove_handle);
         return;
     }
 
@@ -57,11 +62,11 @@ update_info_init (UpdateInfo *info)
     info->packages_seen = 0;
     info->add_count = 0;
     info->del_count = 0;
-    info->current_packages = yum_db_read_package_ids (info->db);
-    info->all_packages = g_hash_table_new_full (g_str_hash, g_str_equal,
-                                                (GDestroyNotify) g_free, NULL);
+    info->all_packages = g_hash_table_new (g_str_hash, g_str_equal);
+    info->package_ids_chunk = g_string_chunk_new (PACKAGE_IDS_CHUNK);
     info->timer = g_timer_new ();
     g_timer_start (info->timer);
+    info->current_packages = yum_db_read_package_ids (info->db, err);
 }
 
 static void
@@ -100,17 +105,25 @@ count_cb (guint32 count, gpointer user_data)
 }
 
 static void
-update_info_done (UpdateInfo *info)
+update_info_done (UpdateInfo *info, GError **err)
 {
-    sqlite3_finalize (info->remove_handle);
-    g_hash_table_destroy (info->current_packages);
-    g_hash_table_destroy (info->all_packages);
+    if (info->remove_handle)
+        sqlite3_finalize (info->remove_handle);
+    if (info->current_packages)
+        g_hash_table_destroy (info->current_packages);
+    if (info->all_packages)
+        g_hash_table_destroy (info->all_packages);
+    if (info->package_ids_chunk)
+        g_string_chunk_free (info->package_ids_chunk);
 
     g_timer_stop (info->timer);
-    debug (DEBUG_LEVEL_INFO,
-           "Added %d new packages, deleted %d old in %.2f seconds",
-           info->add_count, info->del_count,
-           g_timer_elapsed (info->timer, NULL));
+    if (!*err) {
+        debug (DEBUG_LEVEL_INFO,
+               "Added %d new packages, deleted %d old in %.2f seconds",
+               info->add_count, info->del_count,
+               g_timer_elapsed (info->timer, NULL));
+    }
+
     g_timer_destroy (info->timer);
 }
 
@@ -127,14 +140,24 @@ typedef struct {
 } PackageWriterInfo;
 
 static void
-package_writer_info_init (PackageWriterInfo *info, sqlite3 *db)
+package_writer_info_init (PackageWriterInfo *info, sqlite3 *db, GError **err)
 {
-    info->pkg_handle = yum_db_package_prepare (db);
-    info->requires_handle = yum_db_dependency_prepare (db, "requires");
-    info->provides_handle = yum_db_dependency_prepare (db, "provides");
-    info->conflicts_handle = yum_db_dependency_prepare (db, "conflicts");
-    info->obsoletes_handle = yum_db_dependency_prepare (db, "obsoletes");
-    info->files_handle = yum_db_file_prepare (db);
+    info->pkg_handle = yum_db_package_prepare (db, err);
+    if (*err)
+        return;
+    info->requires_handle = yum_db_dependency_prepare (db, "requires", err);
+    if (*err)
+        return;
+    info->provides_handle = yum_db_dependency_prepare (db, "provides", err);
+    if (*err)
+        return;
+    info->conflicts_handle = yum_db_dependency_prepare (db, "conflicts", err);
+    if (*err)
+        return;
+    info->obsoletes_handle = yum_db_dependency_prepare (db, "obsoletes", err);
+    if (*err)
+        return;
+    info->files_handle = yum_db_file_prepare (db, err);
 }
 
 static void
@@ -181,7 +204,8 @@ add_package (Package *package, gpointer user_data)
     UpdateInfo *info = (UpdateInfo *) user_data;
 
     g_hash_table_insert (info->all_packages,
-                         g_strdup (package->pkgId),
+                         g_string_chunk_insert (info->package_ids_chunk,
+                                                package->pkgId),
                          GINT_TO_POINTER (1));
 
     if (g_hash_table_lookup (info->current_packages,
@@ -200,57 +224,73 @@ add_package (Package *package, gpointer user_data)
 static void
 package_writer_info_clean (PackageWriterInfo *info)
 {
-    sqlite3_finalize (info->pkg_handle);
-    sqlite3_finalize (info->requires_handle);
-    sqlite3_finalize (info->provides_handle);
-    sqlite3_finalize (info->conflicts_handle);
-    sqlite3_finalize (info->obsoletes_handle);
-    sqlite3_finalize (info->files_handle);
+    if (info->pkg_handle)
+        sqlite3_finalize (info->pkg_handle);
+    if (info->requires_handle)
+        sqlite3_finalize (info->requires_handle);
+    if (info->provides_handle)
+        sqlite3_finalize (info->provides_handle);
+    if (info->conflicts_handle)
+        sqlite3_finalize (info->conflicts_handle);
+    if (info->obsoletes_handle)
+        sqlite3_finalize (info->obsoletes_handle);
+    if (info->files_handle)
+        sqlite3_finalize (info->files_handle);
 }
 
 static char *
 update_primary (const char *md_filename,
                 const char *checksum,
                 ProgressFn progress_cb,
-                gpointer user_data)
+                gpointer user_data,
+                GError **err)
 {
     PackageWriterInfo info;
     UpdateInfo *update_info = &info.update_info;
     char *db_filename;
 
     db_filename = yum_db_filename (md_filename);
-    update_info->db = yum_db_open (db_filename);
+    update_info->db = yum_db_open (db_filename, checksum,
+                                   yum_db_create_primary_tables,
+                                   err);
 
-    if (!update_info->db) {
-        g_free (db_filename);
-        return NULL;
-    }
+    if (*err != NULL)
+        goto cleanup;
 
-    if (yum_db_dbinfo_fresh (update_info->db, checksum)) {
-        sqlite3_close (update_info->db);
+    if (!update_info->db)
         return db_filename;
-    }
 
-    yum_db_create_primary_tables (update_info->db);
-    yum_db_dbinfo_clear (update_info->db);
+    update_info_init (update_info, err);
+    if (*err)
+        goto cleanup;
 
-    update_info_init (update_info);
     update_info->progress_cb = progress_cb;
     update_info->user_data = user_data;
-    package_writer_info_init (&info, update_info->db);
+    package_writer_info_init (&info, update_info->db, err);
+    if (*err)
+        goto cleanup;
 
     sqlite3_exec (update_info->db, "BEGIN", NULL, NULL, NULL);
-    yum_xml_parse_primary (md_filename, count_cb, add_package, &info);
+    yum_xml_parse_primary (md_filename, count_cb, add_package, &info, err);
+    if (*err)
+        goto cleanup;
     sqlite3_exec (update_info->db, "COMMIT", NULL, NULL, NULL);
 
-    package_writer_info_clean (&info);
-
     update_info_remove_old_entries (update_info);
-    update_info_done (update_info);
 
-    yum_db_dbinfo_update (update_info->db, checksum);
+    yum_db_dbinfo_update (update_info->db, checksum, err);
 
-    sqlite3_close (update_info->db);
+ cleanup:
+    package_writer_info_clean (&info);
+    update_info_done (update_info, err);
+
+    if (update_info->db)
+        sqlite3_close (update_info->db);
+
+    if (*err) {
+        g_free (db_filename);
+        db_filename = NULL;
+    }
 
     return db_filename;
 }
@@ -270,7 +310,8 @@ update_filelist_cb (Package *p, gpointer user_data)
     UpdateInfo *update_info = &info->update_info;
 
     g_hash_table_insert (update_info->all_packages,
-                         g_strdup (p->pkgId),
+                         g_string_chunk_insert (update_info->package_ids_chunk,
+                                                p->pkgId),
                          GINT_TO_POINTER (1));
 
     if (g_hash_table_lookup (update_info->current_packages,
@@ -291,50 +332,64 @@ static char *
 update_filelist (const char *md_filename,
                  const char *checksum,
                  ProgressFn progress_cb,
-                 gpointer user_data)
+                 gpointer user_data,
+                 GError **err)
 {
     FileListInfo info;
     UpdateInfo *update_info = &info.update_info;
     char *db_filename;
 
     db_filename = yum_db_filename (md_filename);
-    update_info->db = yum_db_open (db_filename);
+    update_info->db = yum_db_open (db_filename, checksum,
+                                   yum_db_create_filelist_tables,
+                                   err);
 
-    if (!update_info->db) {
-        g_free (db_filename);
-        return NULL;
-    }
+    if (*err)
+        goto cleanup;
 
-    if (yum_db_dbinfo_fresh (update_info->db, checksum)) {
-        sqlite3_close (update_info->db);
+    if (!update_info->db)
         return db_filename;
-    }
 
-    yum_db_create_filelist_tables (update_info->db);
-    yum_db_dbinfo_clear (update_info->db);
-
-    update_info_init (update_info);
+    update_info_init (update_info, err);
+    if (*err)
+        goto cleanup;
     update_info->progress_cb = progress_cb;
     update_info->user_data = user_data;
-    info.pkg_handle = yum_db_package_ids_prepare (update_info->db);
-    info.file_handle = yum_db_filelists_prepare (update_info->db);
+    info.pkg_handle = yum_db_package_ids_prepare (update_info->db, err);
+    if (*err)
+        goto cleanup;
+
+    info.file_handle = yum_db_filelists_prepare (update_info->db, err);
+    if (*err)
+        goto cleanup;
 
     sqlite3_exec (update_info->db, "BEGIN", NULL, NULL, NULL);
     yum_xml_parse_filelists (md_filename,
                              count_cb,
                              update_filelist_cb,
-                             &info);
+                             &info,
+                             err);
+    if (*err)
+        goto cleanup;
     sqlite3_exec (update_info->db, "COMMIT", NULL, NULL, NULL);
 
-    sqlite3_finalize (info.pkg_handle);
-    sqlite3_finalize (info.file_handle);
-
     update_info_remove_old_entries (update_info);
-    update_info_done (update_info);
+    yum_db_dbinfo_update (update_info->db, checksum, err);
 
-    yum_db_dbinfo_update (update_info->db, checksum);
+ cleanup:
+    update_info_done (update_info, err);
 
-    sqlite3_close (update_info->db);
+    if (info.pkg_handle)
+        sqlite3_finalize (info.pkg_handle);
+    if (info.file_handle)
+        sqlite3_finalize (info.file_handle);
+    if (update_info->db)
+        sqlite3_close (update_info->db);
+
+    if (*err) {
+        g_free (db_filename);
+        db_filename = NULL;
+    }
 
     return db_filename;
 }
@@ -354,7 +409,8 @@ update_other_cb (Package *p, gpointer user_data)
     UpdateInfo *update_info = &info->update_info;
 
     g_hash_table_insert (update_info->all_packages,
-                         g_strdup (p->pkgId),
+                         g_string_chunk_insert (update_info->package_ids_chunk,
+                                                p->pkgId),
                          GINT_TO_POINTER (1));
 
     if (g_hash_table_lookup (update_info->current_packages,
@@ -375,50 +431,64 @@ static char *
 update_other (const char *md_filename,
               const char *checksum,
               ProgressFn progress_cb,
-              gpointer user_data)
+              gpointer user_data,
+              GError **err)
 {
     UpdateOtherInfo info;
     UpdateInfo *update_info = &info.update_info;
     char *db_filename;
 
     db_filename = yum_db_filename (md_filename);
-    update_info->db = yum_db_open (db_filename);
+    update_info->db = yum_db_open (db_filename, checksum,
+                                   yum_db_create_other_tables,
+                                   err);
 
-    if (!update_info->db) {
-        g_free (db_filename);
-        return NULL;
-    }
+    if (*err)
+        goto cleanup;
 
-    if (yum_db_dbinfo_fresh (update_info->db, checksum)) {
-        sqlite3_close (update_info->db);
+    if (!update_info->db)
         return db_filename;
-    }
 
-    yum_db_create_other_tables (update_info->db);
-    yum_db_dbinfo_clear (update_info->db);
-
-    update_info_init (update_info);
+    update_info_init (update_info, err);
+    if (*err)
+        goto cleanup;
     update_info->progress_cb = progress_cb;
     update_info->user_data = user_data;
-    info.pkg_handle = yum_db_package_ids_prepare (update_info->db);
-    info.changelog_handle = yum_db_changelog_prepare (update_info->db);
+    info.pkg_handle = yum_db_package_ids_prepare (update_info->db, err);
+    if (*err)
+        goto cleanup;
+
+    info.changelog_handle = yum_db_changelog_prepare (update_info->db, err);
+    if (*err)
+        goto cleanup;
 
     sqlite3_exec (update_info->db, "BEGIN", NULL, NULL, NULL);
     yum_xml_parse_other (md_filename,
                          count_cb,
                          update_other_cb,
-                         &info);
+                         &info,
+                         err);
+    if (*err)
+        goto cleanup;
     sqlite3_exec (update_info->db, "COMMIT", NULL, NULL, NULL);
 
-    sqlite3_finalize (info.pkg_handle);
-    sqlite3_finalize (info.changelog_handle);
-
     update_info_remove_old_entries (update_info);
-    update_info_done (update_info);
+    yum_db_dbinfo_update (update_info->db, checksum, err);
 
-    yum_db_dbinfo_update (update_info->db, checksum);
+ cleanup:
+    update_info_done (update_info, err);
 
-    sqlite3_close (update_info->db);
+    if (info.pkg_handle)
+        sqlite3_finalize (info.pkg_handle);
+    if (info.changelog_handle)
+        sqlite3_finalize (info.changelog_handle);
+    if (update_info->db)
+        sqlite3_close (update_info->db);
+
+    if (*err) {
+        g_free (db_filename);
+        db_filename = NULL;
+    }
 
     return db_filename;
 }
@@ -460,15 +530,17 @@ py_parse_args (PyObject *args,
 
 static void
 progress_cb (guint32 current, guint32 total, gpointer user_data)
-{
+    {
     PyObject *progress = (PyObject *) user_data;
-    PyObject *arglist;
+    PyObject *args;
     PyObject *result;
 
-    arglist = Py_BuildValue ("(ii)", current, total);
-    result = PyEval_CallObject (progress, arglist);
-    Py_DECREF (arglist);
+    args = PyTuple_New (2);
+    PyTuple_SET_ITEM (args, 0, PyInt_FromLong (current));
+    PyTuple_SET_ITEM (args, 1, PyInt_FromLong (total));
 
+    result = PyEval_CallObject (progress, args);
+    Py_DECREF (args);
     Py_XDECREF (result);
 }
 
@@ -478,13 +550,15 @@ debug_cb (const char *message,
           gpointer user_data)
 {
     PyObject *callback = (PyObject *) user_data;
-    PyObject *arglist;
+    PyObject *args;
     PyObject *result;
 
-    arglist = Py_BuildValue ("(is)", level, message);
-    result = PyEval_CallObject (callback, arglist);
-    Py_DECREF (arglist);
+    args = PyTuple_New (2);
+    PyTuple_SET_ITEM (args, 0, PyInt_FromLong (level));
+    PyTuple_SET_ITEM (args, 1, PyString_FromString (message));
 
+    result = PyEval_CallObject (callback, args);
+    Py_DECREF (args);
     Py_XDECREF (result);
 }
 
@@ -497,7 +571,8 @@ py_update_primary (PyObject *self, PyObject *args)
     PyObject *progress = NULL;
     int log_id = 0;
     char *db_filename;
-    PyObject *ret;
+    PyObject *ret = NULL;
+    GError *err = NULL;
 
     if (!py_parse_args (args, &md_filename, &checksum, &log, &progress))
         return NULL;
@@ -508,17 +583,18 @@ py_update_primary (PyObject *self, PyObject *args)
     db_filename = update_primary (md_filename,
                                   checksum,
                                   progress != NULL ? progress_cb : NULL,
-                                  progress);
+                                  progress,
+                                  &err);
 
     if (log_id)
         debug_remove_handler (log_id);
 
     if (db_filename) {
-        ret = Py_BuildValue ("s", db_filename);
+        ret = PyString_FromString (db_filename);
         g_free (db_filename);
     } else {
-        Py_INCREF (Py_None);
-        ret = Py_None;
+        PyErr_SetString (PyExc_TypeError, err->message);
+        g_error_free (err);
     }
 
     return ret;
@@ -533,7 +609,8 @@ py_update_filelist (PyObject *self, PyObject *args)
     PyObject *progress = NULL;
     int log_id = 0;
     char *db_filename;
-    PyObject *ret;
+    PyObject *ret = NULL;
+    GError *err = NULL;
 
     if (!py_parse_args (args, &md_filename, &checksum, &log, &progress))
         return NULL;
@@ -544,17 +621,18 @@ py_update_filelist (PyObject *self, PyObject *args)
     db_filename = update_filelist (md_filename,
                                    checksum,
                                    progress != NULL ? progress_cb : NULL,
-                                   progress);
+                                   progress,
+                                   &err);
 
     if (log_id)
         debug_remove_handler (log_id);
 
     if (db_filename) {
-        ret = Py_BuildValue ("s", db_filename);
+        ret = PyString_FromString (db_filename);
         g_free (db_filename);
     } else {
-        Py_INCREF (Py_None);
-        ret = Py_None;
+        PyErr_SetString (PyExc_TypeError, err->message);
+        g_error_free (err);
     }
 
     return ret;
@@ -569,7 +647,8 @@ py_update_other (PyObject *self, PyObject *args)
     PyObject *progress = NULL;
     int log_id = 0;
     char *db_filename;
-    PyObject *ret;
+    PyObject *ret = NULL;
+    GError *err = NULL;
 
     if (!py_parse_args (args, &md_filename, &checksum, &log, &progress))
         return NULL;
@@ -580,17 +659,18 @@ py_update_other (PyObject *self, PyObject *args)
     db_filename = update_other (md_filename,
                                 checksum,
                                 progress != NULL ? progress_cb : NULL,
-                                progress);
+                                progress,
+                                &err);
 
     if (log_id)
         debug_remove_handler (log_id);
 
     if (db_filename) {
-        ret = Py_BuildValue ("s", db_filename);
+        ret = PyString_FromString (db_filename);
         g_free (db_filename);
     } else {
-        Py_INCREF (Py_None);
-        ret = Py_None;
+        PyErr_SetString (PyExc_TypeError, err->message);
+        g_error_free (err);
     }
 
     return ret;

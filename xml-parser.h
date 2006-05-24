@@ -22,21 +22,27 @@
 
 typedef void (*CountFn) (guint32 count, gpointer data);
 
+#define YUM_PARSER_ERROR yum_parser_error_quark()
+GQuark yum_parser_error_quark (void);
+
 void
 yum_xml_parse_primary (const char *filename,
                        CountFn count_callback,
                        PackageFn package_callback,
-                       gpointer user_data);
+                       gpointer user_data,
+                       GError **err);
 
 void
 yum_xml_parse_filelists (const char *filename,
                          CountFn count_callback,
                          PackageFn package_callback,
-                         gpointer user_data);
+                         gpointer user_data,
+                         GError **err);
 
 void yum_xml_parse_other (const char *filename,
                           CountFn count_callback,
                           PackageFn package_callback,
-                          gpointer user_data);
+                          gpointer user_data,
+                          GError **err);
 
 #endif /* __YUM_XML_PARSER_H__ */

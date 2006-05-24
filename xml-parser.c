@@ -27,6 +27,17 @@
 
 #define PACKAGE_FIELD_SIZE 1024
 
+GQuark
+yum_parser_error_quark (void)
+{
+    static GQuark quark;
+
+    if (!quark)
+        quark = g_quark_from_static_string ("yum_parser_error");
+
+    return quark;
+}
+
 static guint32
 string_to_guint32_with_default (const char *n, guint32 def)
 {
@@ -50,6 +61,7 @@ typedef enum {
 typedef struct {
     xmlParserCtxt *xml_context;
     PrimarySAXContextState state;
+    GError **error;
     CountFn count_fn;
     PackageFn package_fn;
     gpointer user_data;
@@ -58,6 +70,7 @@ typedef struct {
     GSList **current_dep_list;
     PackageFile *current_file;
 
+    gboolean want_text;
     GString *text_buffer;
 } PrimarySAXContext;
 
@@ -103,6 +116,8 @@ primary_parser_package_start (PrimarySAXContext *ctx,
     const char *value;
 
     g_assert (p != NULL);
+
+    ctx->want_text = TRUE;
 
     if (!strcmp (name, "format")) {
         ctx->state = PRIMARY_PARSER_FORMAT;
@@ -313,12 +328,13 @@ primary_parser_package_end (PrimarySAXContext *ctx, const char *name)
     g_assert (p != NULL);
 
     if (!strcmp (name, "package")) {
-        if (ctx->package_fn)
+        if (ctx->package_fn && !*ctx->error)
             ctx->package_fn (p, ctx->user_data);
 
         package_free (p);
         ctx->current_package = NULL;
 
+        ctx->want_text = FALSE;
         ctx->state = PRIMARY_PARSER_TOPLEVEL;
     }
 
@@ -437,7 +453,8 @@ primary_sax_characters (void *data, const char *ch, int len)
 {
     PrimarySAXContext *ctx = (PrimarySAXContext *) data;
 
-    g_string_append_len (ctx->text_buffer, ch, len);
+    if (ctx->want_text)
+        g_string_append_len (ctx->text_buffer, ch, len);
 }
 
 static void
@@ -458,13 +475,15 @@ primary_sax_warning (void *data, const char *msg, ...)
 static void
 primary_sax_error (void *data, const char *msg, ...)
 {
+    PrimarySAXContext *ctx = (PrimarySAXContext *) data;
     va_list args;
     char *tmp;
 
     va_start (args, msg);
 
     tmp = g_strdup_vprintf (msg, args);
-    debug (DEBUG_LEVEL_ERROR, "* SAX Error: %s", tmp);
+    g_set_error (ctx->error, YUM_PARSER_ERROR, YUM_PARSER_ERROR,
+                 "Parsing primary.xml error: %s", tmp);
     g_free (tmp);
 
     va_end (args);
@@ -501,18 +520,21 @@ void
 yum_xml_parse_primary (const char *filename,
                        CountFn count_callback,
                        PackageFn package_callback,
-                       gpointer user_data)
+                       gpointer user_data,
+                       GError **err)
 {
     PrimarySAXContext ctx;
     int rc;
 
     ctx.state = PRIMARY_PARSER_TOPLEVEL;
+    ctx.error = err;
     ctx.count_fn = count_callback;
     ctx.package_fn = package_callback;
     ctx.user_data = user_data;
     ctx.current_package = NULL;
     ctx.current_dep_list = NULL;
     ctx.current_file = NULL;
+    ctx.want_text = FALSE;
     ctx.text_buffer = g_string_sized_new (PACKAGE_FIELD_SIZE);
 
     xmlSubstituteEntitiesDefault (1);
@@ -537,6 +559,7 @@ typedef enum {
 typedef struct {
     xmlParserCtxt *xml_context;
     FilelistSAXContextState state;
+    GError **error;
     CountFn count_fn;
     PackageFn package_fn;
     gpointer user_data;
@@ -544,6 +567,7 @@ typedef struct {
     Package *current_package;
     PackageFile *current_file;
 
+    gboolean want_text;
     GString *text_buffer;
 } FilelistSAXContext;
 
@@ -607,6 +631,8 @@ filelist_parser_package_start (FilelistSAXContext *ctx,
 
     g_assert (p != NULL);
 
+    ctx->want_text = TRUE;
+
     if (!strcmp (name, "version")) {
         for (i = 0; attrs && attrs[i]; i++) {
             attr = attrs[i];
@@ -662,8 +688,10 @@ filelist_parser_package_end (FilelistSAXContext *ctx, const char *name)
 
     g_assert (p != NULL);
 
+    ctx->want_text = FALSE;
+
     if (!strcmp (name, "package")) {
-        if (ctx->package_fn)
+        if (ctx->package_fn && !*ctx->error)
             ctx->package_fn (p, ctx->user_data);
 
         package_free (p);
@@ -711,7 +739,8 @@ filelist_sax_characters (void *data, const char *ch, int len)
 {
     FilelistSAXContext *ctx = (FilelistSAXContext *) data;
 
-    g_string_append_len (ctx->text_buffer, ch, len);
+    if (ctx->want_text)
+        g_string_append_len (ctx->text_buffer, ch, len);
 }
 
 static void
@@ -732,13 +761,15 @@ filelist_sax_warning (void *data, const char *msg, ...)
 static void
 filelist_sax_error (void *data, const char *msg, ...)
 {
+    PrimarySAXContext *ctx = (PrimarySAXContext *) data;
     va_list args;
     char *tmp;
 
     va_start (args, msg);
 
     tmp = g_strdup_vprintf (msg, args);
-    debug (DEBUG_LEVEL_ERROR, "* SAX Error: %s", tmp);
+    g_set_error (ctx->error, YUM_PARSER_ERROR, YUM_PARSER_ERROR,
+                 "Parsing filelists.xml error: %s", tmp);
     g_free (tmp);
 
     va_end (args);
@@ -775,17 +806,20 @@ void
 yum_xml_parse_filelists (const char *filename,
                          CountFn count_callback,
                          PackageFn package_callback,
-                         gpointer user_data)
+                         gpointer user_data,
+                         GError **err)
 {
     FilelistSAXContext ctx;
     int rc;
 
     ctx.state = FILELIST_PARSER_TOPLEVEL;
+    ctx.error = err;
     ctx.count_fn = count_callback;
     ctx.package_fn = package_callback;
     ctx.user_data = user_data;
     ctx.current_package = NULL;
     ctx.current_file = NULL;
+    ctx.want_text = FALSE;
     ctx.text_buffer = g_string_sized_new (PACKAGE_FIELD_SIZE);
 
     xmlSubstituteEntitiesDefault (1);
@@ -812,6 +846,7 @@ typedef enum {
 typedef struct {
     xmlParserCtxt *xml_context;
     OtherSAXContextState state;
+    GError **error;
     CountFn count_fn;
     PackageFn package_fn;
     gpointer user_data;
@@ -819,6 +854,7 @@ typedef struct {
     Package *current_package;
     ChangelogEntry *current_entry;
 
+    gboolean want_text;
     GString *text_buffer;
 } OtherSAXContext;
 
@@ -882,6 +918,8 @@ other_parser_package_start (OtherSAXContext *ctx,
 
     g_assert (p != NULL);
 
+    ctx->want_text = TRUE;
+
     if (!strcmp (name, "version")) {
         for (i = 0; attrs && attrs[i]; i++) {
             attr = attrs[i];
@@ -940,12 +978,14 @@ other_parser_package_end (OtherSAXContext *ctx, const char *name)
 
     g_assert (p != NULL);
 
+    ctx->want_text = FALSE;
+
     if (!strcmp (name, "package")) {
 
         if (p->changelogs)
             p->changelogs = g_slist_reverse (p->changelogs);
 
-        if (ctx->package_fn)
+        if (ctx->package_fn && !*ctx->error)
             ctx->package_fn (p, ctx->user_data);
 
         package_free (p);
@@ -991,7 +1031,8 @@ other_sax_characters (void *data, const char *ch, int len)
 {
     OtherSAXContext *ctx = (OtherSAXContext *) data;
 
-    g_string_append_len (ctx->text_buffer, ch, len);
+    if (ctx->want_text)
+        g_string_append_len (ctx->text_buffer, ch, len);
 }
 
 static void
@@ -1012,13 +1053,15 @@ other_sax_warning (void *data, const char *msg, ...)
 static void
 other_sax_error (void *data, const char *msg, ...)
 {
+    PrimarySAXContext *ctx = (PrimarySAXContext *) data;
     va_list args;
     char *tmp;
 
     va_start (args, msg);
 
     tmp = g_strdup_vprintf (msg, args);
-    debug (DEBUG_LEVEL_ERROR, "* SAX Error: %s", tmp);
+    g_set_error (ctx->error, YUM_PARSER_ERROR, YUM_PARSER_ERROR,
+                 "Parsing other.xml error: %s", tmp);
     g_free (tmp);
 
     va_end (args);
@@ -1055,17 +1098,20 @@ void
 yum_xml_parse_other (const char *filename,
                      CountFn count_callback,
                      PackageFn package_callback,
-                     gpointer user_data)
+                     gpointer user_data,
+                     GError **err)
 {
     OtherSAXContext ctx;
     int rc;
 
     ctx.state = OTHER_PARSER_TOPLEVEL;
+    ctx.error = err;
     ctx.count_fn = count_callback;
     ctx.package_fn = package_callback;
     ctx.user_data = user_data;
     ctx.current_package = NULL;
     ctx.current_entry = NULL;
+    ctx.want_text = FALSE;
     ctx.text_buffer = g_string_sized_new (PACKAGE_FIELD_SIZE);
 
     xmlSubstituteEntitiesDefault (1);

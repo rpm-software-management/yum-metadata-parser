@@ -24,32 +24,40 @@
 
 #define YUM_SQLITE_CACHE_DBVERSION 8
 
+#define YUM_DB_ERROR yum_db_error_quark()
+GQuark yum_db_error_quark (void);
+
+typedef void (*CreateTablesFn) (sqlite3 *db, GError **err);
+
 char         *yum_db_filename               (const char *prefix);
-sqlite3      *yum_db_open                   (const char *path);
+sqlite3      *yum_db_open                   (const char *path,
+                                             const char *checksum,
+                                             CreateTablesFn create_tables,
+                                             GError **err);
 
-void          yum_db_dbinfo_clear           (sqlite3 *db);
-gboolean      yum_db_dbinfo_fresh           (sqlite3 *db,
-                                             const char *checksum);
 void          yum_db_dbinfo_update          (sqlite3 *db,
-                                             const char *checksum);
+                                             const char *checksum,
+                                             GError **err);
 
-GHashTable   *yum_db_read_package_ids       (sqlite3 *db);
+GHashTable   *yum_db_read_package_ids       (sqlite3 *db, GError **err);
 
 /* Primary */
 
-void          yum_db_create_primary_tables  (sqlite3 *db);
-sqlite3_stmt *yum_db_package_prepare        (sqlite3 *db);
+void          yum_db_create_primary_tables  (sqlite3 *db, GError **err);
+sqlite3_stmt *yum_db_package_prepare        (sqlite3 *db, GError **err);
 void          yum_db_package_write          (sqlite3 *db,
                                              sqlite3_stmt *handle,
                                              Package *p);
 
-sqlite3_stmt *yum_db_dependency_prepare     (sqlite3 *db, const char *table);
+sqlite3_stmt *yum_db_dependency_prepare     (sqlite3 *db,
+                                             const char *table,
+                                             GError **err);
 void          yum_db_dependency_write       (sqlite3 *db,
                                              sqlite3_stmt *handle,
                                              gint64 pkgKey,
                                              Dependency *dep);
 
-sqlite3_stmt *yum_db_file_prepare           (sqlite3 *db);
+sqlite3_stmt *yum_db_file_prepare           (sqlite3 *db, GError **err);
 void          yum_db_file_write             (sqlite3 *db,
                                              sqlite3_stmt *handle,
                                              gint64 pkgKey,
@@ -57,20 +65,20 @@ void          yum_db_file_write             (sqlite3 *db,
 
 /* Filelists */
 
-void          yum_db_create_filelist_tables (sqlite3 *db);
-sqlite3_stmt *yum_db_package_ids_prepare    (sqlite3 *db);
+void          yum_db_create_filelist_tables (sqlite3 *db, GError **err);
+sqlite3_stmt *yum_db_package_ids_prepare    (sqlite3 *db, GError **err);
 void          yum_db_package_ids_write      (sqlite3 *db,
                                              sqlite3_stmt *handle,
                                              Package *p);
 
-sqlite3_stmt *yum_db_filelists_prepare      (sqlite3 *db);
+sqlite3_stmt *yum_db_filelists_prepare      (sqlite3 *db, GError **err);
 void          yum_db_filelists_write        (sqlite3 *db,
                                              sqlite3_stmt *handle,
                                              Package *p);
 
 /* Other */
-void          yum_db_create_other_tables    (sqlite3 *db);
-sqlite3_stmt *yum_db_changelog_prepare      (sqlite3 *db);
+void          yum_db_create_other_tables    (sqlite3 *db, GError **err);
+sqlite3_stmt *yum_db_changelog_prepare      (sqlite3 *db, GError **err);
 void          yum_db_changelog_write        (sqlite3 *db,
                                              sqlite3_stmt *handle,
                                              Package *p);

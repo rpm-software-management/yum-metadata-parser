@@ -26,4 +26,5 @@ module = Extension('_sqlitecache',
 setup (name = '_sqlitecache',
        version = '1.0',
        description = 'A fast YUM meta-data parser',
+	   py_modules = ['sqlitecachec'],
        ext_modules = [module])

@@ -16,9 +16,20 @@
  */
 
 #include <string.h>
+#include <unistd.h>
 #include "db.h"
 #include "debug.h"
 
+GQuark
+yum_db_error_quark (void)
+{
+    static GQuark quark;
+
+    if (!quark)
+        quark = g_quark_from_static_string ("yum_db_error");
+
+    return quark;
+}
 
 #define ENCODED_PACKAGE_FILE_FILES 2048
 #define ENCODED_PACKAGE_FILE_TYPES 60
@@ -100,49 +111,25 @@ yum_db_filename (const char *prefix)
     return filename;
 }
 
-sqlite3 *
-yum_db_open (const char *path)
-{
-    int rc;
-    sqlite3 *db = NULL;
+typedef enum {
+    DB_STATUS_OK,
+    DB_STATUS_VERSION_MISMATCH,
+    DB_STATUS_CHECKSUM_MISMATCH,
+    DB_STATUS_ERROR
+} DBStatus;
 
-    rc = sqlite3_open (path, &db);
-    if (rc != SQLITE_OK) {
-        debug (DEBUG_LEVEL_ERROR,
-               "Can not open SQL database: %s",
-               sqlite3_errmsg (db));
-        sqlite3_close (db);
-        db = NULL;
-    }
-
-    sqlite3_exec (db, "PRAGMA synchronous = 0", NULL, NULL, NULL);
-
-    return db;
-}
-
-static void
-yum_db_create_dbinfo_table (sqlite3 *db)
-{
-    const char *sql;
-
-    sql = "CREATE TABLE db_info (dbversion TEXT, checksum TEXT)";
-    sqlite3_exec (db, sql, NULL, NULL, NULL);
-}
-
-gboolean
-yum_db_dbinfo_fresh (sqlite3 *db, const char *checksum)
+static DBStatus
+dbinfo_status (sqlite3 *db, const char *checksum)
 {
     const char *query;
     int rc;
     sqlite3_stmt *handle = NULL;
-    gboolean fresh = FALSE;
+    DBStatus status = DB_STATUS_ERROR;
 
     query = "SELECT dbversion, checksum FROM db_info";
     rc = sqlite3_prepare (db, query, -1, &handle, NULL);
-    if (rc != SQLITE_OK) {
-        /* That's fine, maybe the table doesn't even exist (yet) */
+    if (rc != SQLITE_OK)
         goto cleanup;
-    }
 
     while ((rc = sqlite3_step (handle)) == SQLITE_ROW) {
         int dbversion;
@@ -151,15 +138,17 @@ yum_db_dbinfo_fresh (sqlite3 *db, const char *checksum)
         dbversion  = sqlite3_column_int  (handle, 0);
         dbchecksum = (const char *) sqlite3_column_text (handle, 1);
 
-        if (dbversion != YUM_SQLITE_CACHE_DBVERSION)
+        if (dbversion != YUM_SQLITE_CACHE_DBVERSION) {
             debug (DEBUG_LEVEL_INFO,
                    "Warning: cache file is version %d, we need %d, will regenerate",
                    dbversion, YUM_SQLITE_CACHE_DBVERSION);
-        else if (strcmp (checksum, dbchecksum))
+            status = DB_STATUS_VERSION_MISMATCH;
+        } else if (strcmp (checksum, dbchecksum)) {
             debug (DEBUG_LEVEL_INFO,
                    "sqlite cache needs updating, reading in metadata\n");
-        else
-            fresh = TRUE;
+            status = DB_STATUS_CHECKSUM_MISMATCH;
+        } else
+            status = DB_STATUS_OK;
 
         break;
     }
@@ -168,31 +157,117 @@ yum_db_dbinfo_fresh (sqlite3 *db, const char *checksum)
     if (handle)
         sqlite3_finalize (handle);
 
-    return fresh;
+    return status;
+}
+
+static void
+yum_db_create_dbinfo_table (sqlite3 *db, GError **err)
+{
+    int rc;
+    const char *sql;
+
+    sql = "CREATE TABLE db_info (dbversion TEXT, checksum TEXT)";
+    rc = sqlite3_exec (db, sql, NULL, NULL, NULL);
+    if (rc != SQLITE_OK) {
+        g_set_error (err, YUM_DB_ERROR, YUM_DB_ERROR,
+                     "Can not create db_info table: %s",
+                     sqlite3_errmsg (db));
+    }
+}
+
+sqlite3 *
+yum_db_open (const char *path,
+             const char *checksum,
+             CreateTablesFn create_tables,
+             GError **err)
+{
+    int rc;
+    sqlite3 *db = NULL;
+    gboolean db_existed;
+
+    db_existed = g_file_test (path, G_FILE_TEST_EXISTS);
+
+    rc = sqlite3_open (path, &db);
+    if (rc == SQLITE_OK) {
+        if (db_existed) {
+            DBStatus status = dbinfo_status (db, checksum);
+
+            switch (status) {
+            case DB_STATUS_OK:
+                /* Everything is up-to-date */
+                sqlite3_close (db);
+                return NULL;
+                break;
+            case DB_STATUS_CHECKSUM_MISMATCH:
+                sqlite3_exec (db, "PRAGMA synchronous = 0", NULL, NULL, NULL);
+                sqlite3_exec (db, "DELETE FROM db_info", NULL, NULL, NULL);
+                return db;
+                break;
+            case DB_STATUS_VERSION_MISMATCH:
+            case DB_STATUS_ERROR:
+                sqlite3_close (db);
+                db = NULL;
+                break;
+            }
+        }
+    } else {
+        /* Let's try to delete it and try again,
+           maybe it's a sqlite3 version mismatch. */
+        sqlite3_close (db);
+        db = NULL;
+        unlink (path);
+    }
+
+    if (!db) {
+        rc = sqlite3_open (path, &db);
+        if (rc != SQLITE_OK) {
+            g_set_error (err, YUM_DB_ERROR, YUM_DB_ERROR,
+                         "Can not open SQL database: %s",
+                         sqlite3_errmsg (db));
+            goto cleanup;
+        }
+    }
+
+    yum_db_create_dbinfo_table (db, err);
+    if (*err)
+        goto cleanup;
+
+    create_tables (db, err);
+    if (*err)
+        goto cleanup;
+
+    sqlite3_exec (db, "PRAGMA synchronous = 0", NULL, NULL, NULL);
+
+ cleanup:
+    if (*err && db) {
+        sqlite3_close (db);
+        db = NULL;
+    }
+
+    return db;
 }
 
 void
-yum_db_dbinfo_clear (sqlite3 *db)
+yum_db_dbinfo_update (sqlite3 *db, const char *checksum, GError **err)
 {
-    sqlite3_exec (db, "DELETE FROM db_info", NULL, NULL, NULL);
-}
-
-void
-yum_db_dbinfo_update (sqlite3 *db, const char *checksum)
-{
+    int rc;
     char *sql;
 
     sql = g_strdup_printf
         ("INSERT INTO db_info (dbversion, checksum) VALUES (%d, '%s')",
          YUM_SQLITE_CACHE_DBVERSION, checksum);
 
-    sqlite3_exec (db, sql, NULL, NULL, NULL);
+    rc = sqlite3_exec (db, sql, NULL, NULL, NULL);
+    if (rc != SQLITE_OK)
+        g_set_error (err, YUM_DB_ERROR, YUM_DB_ERROR,
+                     "Can not update dbinfo table: %s",
+                     sqlite3_errmsg (db));
 
     g_free (sql);
 }
 
 GHashTable *
-yum_db_read_package_ids (sqlite3 *db)
+yum_db_read_package_ids (sqlite3 *db, GError **err)
 {
     const char *query;
     int rc;
@@ -202,9 +277,9 @@ yum_db_read_package_ids (sqlite3 *db)
     query = "SELECT pkgId, pkgKey FROM packages";
     rc = sqlite3_prepare (db, query, -1, &handle, NULL);
     if (rc != SQLITE_OK) {
-        debug (DEBUG_LEVEL_WARNING,
-               "Can not prepare SQL clause: %s",
-               sqlite3_errmsg (db));
+        g_set_error (err, YUM_DB_ERROR, YUM_DB_ERROR,
+                     "Can not prepare SQL clause: %s",
+                     sqlite3_errmsg (db));
         goto cleanup;
     }
 
@@ -222,9 +297,9 @@ yum_db_read_package_ids (sqlite3 *db)
     }
 
     if (rc != SQLITE_DONE)
-        debug (DEBUG_LEVEL_ERROR,
-               "Error reading from SQL: %s",
-               sqlite3_errmsg (db));
+        g_set_error (err, YUM_DB_ERROR, YUM_DB_ERROR,
+                     "Error reading from SQL: %s",
+                     sqlite3_errmsg (db));
 
  cleanup:
     if (handle)
@@ -234,11 +309,10 @@ yum_db_read_package_ids (sqlite3 *db)
 }
 
 void
-yum_db_create_primary_tables (sqlite3 *db)
+yum_db_create_primary_tables (sqlite3 *db, GError **err)
 {
+    int rc;
     const char *sql;
-
-    yum_db_create_dbinfo_table (db);
 
     sql =
         "CREATE TABLE packages ("
@@ -270,19 +344,44 @@ yum_db_create_primary_tables (sqlite3 *db)
         "  checksum_type TEXT,"
         "  checksum_value TEXT)";
 
-    sqlite3_exec (db, sql, NULL, NULL, NULL);
+    rc = sqlite3_exec (db, sql, NULL, NULL, NULL);
+    if (rc != SQLITE_OK) {
+        g_set_error (err, YUM_DB_ERROR, YUM_DB_ERROR,
+                     "Can not create packages table: %s",
+                     sqlite3_errmsg (db));
+        return;
+    }
 
     sql = "CREATE INDEX packagename ON packages (name)";
-    sqlite3_exec (db, sql, NULL, NULL, NULL);
+    rc = sqlite3_exec (db, sql, NULL, NULL, NULL);
+    if (rc != SQLITE_OK) {
+        g_set_error (err, YUM_DB_ERROR, YUM_DB_ERROR,
+                     "Can not create packagename index: %s",
+                     sqlite3_errmsg (db));
+        return;
+    }
+    
     sql = "CREATE INDEX packageId ON packages (pkgId)";
-    sqlite3_exec (db, sql, NULL, NULL, NULL);
+    rc = sqlite3_exec (db, sql, NULL, NULL, NULL);
+    if (rc != SQLITE_OK) {
+        g_set_error (err, YUM_DB_ERROR, YUM_DB_ERROR,
+                     "Can not create packageId index: %s",
+                     sqlite3_errmsg (db));
+        return;
+    }
 
     sql =
         "CREATE TABLE files ("
         "  name TEXT,"
         "  type TEXT,"
         "  pkgKey TEXT)";
-    sqlite3_exec (db, sql, NULL, NULL, NULL);
+    rc = sqlite3_exec (db, sql, NULL, NULL, NULL);
+    if (rc != SQLITE_OK) {
+        g_set_error (err, YUM_DB_ERROR, YUM_DB_ERROR,
+                     "Can not create files table: %s",
+                     sqlite3_errmsg (db));
+        return;
+    }
 
     sql =
         "CREATE TABLE %s ("
@@ -292,19 +391,31 @@ yum_db_create_primary_tables (sqlite3 *db)
         "  version TEXT,"
         "  release TEXT,"
         "  pkgKey TEXT)";
-    sqlite3_exec (db, sql, NULL, NULL, NULL);
 
     const char *deps[] = { "requires", "provides", "conflicts", "obsoletes", NULL };
     int i;
 
     for (i = 0; deps[i]; i++) {
         char *query = g_strdup_printf (sql, deps[i]);
-        sqlite3_exec (db, query, NULL, NULL, NULL);
+        rc = sqlite3_exec (db, query, NULL, NULL, NULL);
         g_free (query);
+
+        if (rc != SQLITE_OK) {
+            g_set_error (err, YUM_DB_ERROR, YUM_DB_ERROR,
+                         "Can not create %s table: %s",
+                         deps[i], sqlite3_errmsg (db));
+            return;
+        }
     }
 
     sql = "CREATE INDEX providesname ON provides (name)";
-    sqlite3_exec (db, sql, NULL, NULL, NULL);
+    rc = sqlite3_exec (db, sql, NULL, NULL, NULL);
+    if (rc != SQLITE_OK) {
+        g_set_error (err, YUM_DB_ERROR, YUM_DB_ERROR,
+                     "Can not create providesname index: %s",
+                     sqlite3_errmsg (db));
+        return;
+    }
 
     sql =
         "CREATE TRIGGER removals AFTER DELETE ON packages"
@@ -316,11 +427,17 @@ yum_db_create_primary_tables (sqlite3 *db)
         "    DELETE FROM obsoletes WHERE pkgKey = old.pkgKey;"
         "  END;";
 
-    sqlite3_exec (db, sql, NULL, NULL, NULL);
+    rc = sqlite3_exec (db, sql, NULL, NULL, NULL);
+    if (rc != SQLITE_OK) {
+        g_set_error (err, YUM_DB_ERROR, YUM_DB_ERROR,
+                     "Can not create removals trigger: %s",
+                     sqlite3_errmsg (db));
+        return;
+    }
 }
 
 sqlite3_stmt *
-yum_db_package_prepare (sqlite3 *db)
+yum_db_package_prepare (sqlite3 *db, GError **err)
 {
     int rc;
     sqlite3_stmt *handle = NULL;
@@ -338,9 +455,9 @@ yum_db_package_prepare (sqlite3 *db)
 
     rc = sqlite3_prepare (db, query, -1, &handle, NULL);
     if (rc != SQLITE_OK) {
-        debug (DEBUG_LEVEL_WARNING,
-               "Can not prepare package insertion clause: %s",
-               sqlite3_errmsg (db));
+        g_set_error (err, YUM_DB_ERROR, YUM_DB_ERROR,
+                     "Can not prepare packages insertion: %s",
+                     sqlite3_errmsg (db));
         sqlite3_finalize (handle);
         handle = NULL;
     }
@@ -392,7 +509,9 @@ yum_db_package_write (sqlite3 *db, sqlite3_stmt *handle, Package *p)
 }
 
 sqlite3_stmt *
-yum_db_dependency_prepare (sqlite3 *db, const char *table)
+yum_db_dependency_prepare (sqlite3 *db,
+                           const char *table,
+                           GError **err)
 {
     int rc;
     sqlite3_stmt *handle = NULL;
@@ -406,9 +525,9 @@ yum_db_dependency_prepare (sqlite3 *db, const char *table)
     g_free (query);
 
     if (rc != SQLITE_OK) {
-        debug (DEBUG_LEVEL_ERROR,
-               "Can not prepare dependency insertion clause: %s",
-               sqlite3_errmsg (db));
+        g_set_error (err, YUM_DB_ERROR, YUM_DB_ERROR,
+                     "Can not prepare dependency insertion: %s",
+                     sqlite3_errmsg (db));
         sqlite3_finalize (handle);
         handle = NULL;
     }
@@ -441,7 +560,7 @@ yum_db_dependency_write (sqlite3 *db,
 }
 
 sqlite3_stmt *
-yum_db_file_prepare (sqlite3 *db)
+yum_db_file_prepare (sqlite3 *db, GError **err)
 {
     int rc;
     sqlite3_stmt *handle = NULL;
@@ -451,9 +570,9 @@ yum_db_file_prepare (sqlite3 *db)
 
     rc = sqlite3_prepare (db, query, -1, &handle, NULL);
     if (rc != SQLITE_OK) {
-        debug (DEBUG_LEVEL_ERROR,
-               "Can not prepare file insertion clause: %s",
-               sqlite3_errmsg (db));
+        g_set_error (err, YUM_DB_ERROR, YUM_DB_ERROR,
+                     "Can not prepare file insertion: %s",
+                     sqlite3_errmsg (db));
         sqlite3_finalize (handle);
         handle = NULL;
     }
@@ -484,17 +603,22 @@ yum_db_file_write (sqlite3 *db,
 }
 
 void
-yum_db_create_filelist_tables (sqlite3 *db)
+yum_db_create_filelist_tables (sqlite3 *db, GError **err)
 {
+    int rc;
     const char *sql;
-
-    yum_db_create_dbinfo_table (db);
 
     sql =
         "CREATE TABLE packages ("
         "  pkgKey INTEGER PRIMARY KEY,"
         "  pkgId TEXT)";
-    sqlite3_exec (db, sql, NULL, NULL, NULL);
+    rc = sqlite3_exec (db, sql, NULL, NULL, NULL);
+    if (rc != SQLITE_OK) {
+        g_set_error (err, YUM_DB_ERROR, YUM_DB_ERROR,
+                     "Can not create packages table: %s",
+                     sqlite3_errmsg (db));
+        return;
+    }
 
     sql =
         "CREATE TABLE filelist ("
@@ -502,13 +626,31 @@ yum_db_create_filelist_tables (sqlite3 *db)
         "  dirname TEXT,"
         "  filenames TEXT,"
         "  filetypes TEXT)";
-    sqlite3_exec (db, sql, NULL, NULL, NULL);
+    rc = sqlite3_exec (db, sql, NULL, NULL, NULL);
+    if (rc != SQLITE_OK) {
+        g_set_error (err, YUM_DB_ERROR, YUM_DB_ERROR,
+                     "Can not create filelist table: %s",
+                     sqlite3_errmsg (db));
+        return;
+    }
 
     sql = "CREATE INDEX keyfile ON filelist (pkgKey)";
-    sqlite3_exec (db, sql, NULL, NULL, NULL);
+    rc = sqlite3_exec (db, sql, NULL, NULL, NULL);
+    if (rc != SQLITE_OK) {
+        g_set_error (err, YUM_DB_ERROR, YUM_DB_ERROR,
+                     "Can not create keyfile index: %s",
+                     sqlite3_errmsg (db));
+        return;
+    }
 
     sql = "CREATE INDEX pkgId ON packages (pkgId)";
-    sqlite3_exec (db, sql, NULL, NULL, NULL);
+    rc = sqlite3_exec (db, sql, NULL, NULL, NULL);
+    if (rc != SQLITE_OK) {
+        g_set_error (err, YUM_DB_ERROR, YUM_DB_ERROR,
+                     "Can not create pkgId index: %s",
+                     sqlite3_errmsg (db));
+        return;
+    }
 
     sql =
         "CREATE TRIGGER remove_filelist AFTER DELETE ON packages"
@@ -516,11 +658,17 @@ yum_db_create_filelist_tables (sqlite3 *db)
         "    DELETE FROM filelist WHERE pkgKey = old.pkgKey;"
         "  END;";
 
-    sqlite3_exec (db, sql, NULL, NULL, NULL);
+    rc = sqlite3_exec (db, sql, NULL, NULL, NULL);
+    if (rc != SQLITE_OK) {
+        g_set_error (err, YUM_DB_ERROR, YUM_DB_ERROR,
+                     "Can not create remove_filelist trigger: %s",
+                     sqlite3_errmsg (db));
+        return;
+    }
 }
 
 sqlite3_stmt *
-yum_db_package_ids_prepare (sqlite3 *db)
+yum_db_package_ids_prepare (sqlite3 *db, GError **err)
 {
     int rc;
     sqlite3_stmt *handle = NULL;
@@ -529,9 +677,9 @@ yum_db_package_ids_prepare (sqlite3 *db)
     query = "INSERT INTO packages (pkgId) VALUES (?)";
     rc = sqlite3_prepare (db, query, -1, &handle, NULL);
     if (rc != SQLITE_OK) {
-        debug (DEBUG_LEVEL_ERROR,
-               "Can not prepare package insertion clause: %s",
-               sqlite3_errmsg (db));
+        g_set_error (err, YUM_DB_ERROR, YUM_DB_ERROR,
+                     "Can not prepare package ids insertion: %s",
+                     sqlite3_errmsg (db));
         sqlite3_finalize (handle);
         handle = NULL;
     }
@@ -557,7 +705,7 @@ yum_db_package_ids_write (sqlite3 *db, sqlite3_stmt *handle, Package *p)
 }
 
 sqlite3_stmt *
-yum_db_filelists_prepare (sqlite3 *db)
+yum_db_filelists_prepare (sqlite3 *db, GError **err)
 {
     int rc;
     sqlite3_stmt *handle = NULL;
@@ -569,9 +717,9 @@ yum_db_filelists_prepare (sqlite3 *db)
 
     rc = sqlite3_prepare (db, query, -1, &handle, NULL);
     if (rc != SQLITE_OK) {
-        debug (DEBUG_LEVEL_ERROR,
-               "Can not prepare filelists insertion clause: %s",
-               sqlite3_errmsg (db));
+        g_set_error (err, YUM_DB_ERROR, YUM_DB_ERROR,
+                     "Can not prepare filelist insertion: %s",
+                     sqlite3_errmsg (db));
         sqlite3_finalize (handle);
         handle = NULL;
     }
@@ -623,17 +771,22 @@ yum_db_filelists_write (sqlite3 *db, sqlite3_stmt *handle, Package *p)
 }
 
 void
-yum_db_create_other_tables (sqlite3 *db)
+yum_db_create_other_tables (sqlite3 *db, GError **err)
 {
+    int rc;
     const char *sql;
-
-    yum_db_create_dbinfo_table (db);
 
     sql =
         "CREATE TABLE packages ("
         "  pkgKey INTEGER PRIMARY KEY,"
         "  pkgId TEXT)";
-    sqlite3_exec (db, sql, NULL, NULL, NULL);
+    rc = sqlite3_exec (db, sql, NULL, NULL, NULL);
+    if (rc != SQLITE_OK) {
+        g_set_error (err, YUM_DB_ERROR, YUM_DB_ERROR,
+                     "Can not create packages table: %s",
+                     sqlite3_errmsg (db));
+        return;
+    }
 
     sql =
         "CREATE TABLE changelog ("
@@ -641,13 +794,31 @@ yum_db_create_other_tables (sqlite3 *db)
         "  author TEXT,"
         "  date TEXT,"
         "  changelog TEXT)";
-    sqlite3_exec (db, sql, NULL, NULL, NULL);
+    rc = sqlite3_exec (db, sql, NULL, NULL, NULL);
+    if (rc != SQLITE_OK) {
+        g_set_error (err, YUM_DB_ERROR, YUM_DB_ERROR,
+                     "Can not create changelog table: %s",
+                     sqlite3_errmsg (db));
+        return;
+    }
 
     sql = "CREATE INDEX keychange ON changelog (pkgKey)";
-    sqlite3_exec (db, sql, NULL, NULL, NULL);
+    rc = sqlite3_exec (db, sql, NULL, NULL, NULL);
+    if (rc != SQLITE_OK) {
+        g_set_error (err, YUM_DB_ERROR, YUM_DB_ERROR,
+                     "Can not create keychange index: %s",
+                     sqlite3_errmsg (db));
+        return;
+    }
 
     sql = "CREATE INDEX pkgId ON packages (pkgId)";
-    sqlite3_exec (db, sql, NULL, NULL, NULL);
+    rc = sqlite3_exec (db, sql, NULL, NULL, NULL);
+    if (rc != SQLITE_OK) {
+        g_set_error (err, YUM_DB_ERROR, YUM_DB_ERROR,
+                     "Can not create pkgId index: %s",
+                     sqlite3_errmsg (db));
+        return;
+    }
 
     sql =
         "CREATE TRIGGER remove_changelogs AFTER DELETE ON packages"
@@ -655,11 +826,17 @@ yum_db_create_other_tables (sqlite3 *db)
         "    DELETE FROM changelog WHERE pkgKey = old.pkgKey;"
         "  END;";
 
-    sqlite3_exec (db, sql, NULL, NULL, NULL);
+    rc = sqlite3_exec (db, sql, NULL, NULL, NULL);
+    if (rc != SQLITE_OK) {
+        g_set_error (err, YUM_DB_ERROR, YUM_DB_ERROR,
+                     "Can not create remove_changelogs trigger: %s",
+                     sqlite3_errmsg (db));
+        return;
+    }
 }
 
 sqlite3_stmt *
-yum_db_changelog_prepare (sqlite3 *db)
+yum_db_changelog_prepare (sqlite3 *db, GError **err)
 {
     int rc;
     sqlite3_stmt *handle = NULL;
@@ -671,9 +848,9 @@ yum_db_changelog_prepare (sqlite3 *db)
 
     rc = sqlite3_prepare (db, query, -1, &handle, NULL);
     if (rc != SQLITE_OK) {
-        debug (DEBUG_LEVEL_ERROR,
-               "Can not prepare changelog insertion clause: %s",
-               sqlite3_errmsg (db));
+        g_set_error (err, YUM_DB_ERROR, YUM_DB_ERROR,
+                     "Can not prepare changelog insertion: %s",
+                     sqlite3_errmsg (db));
         sqlite3_finalize (handle);
         handle = NULL;
     }
