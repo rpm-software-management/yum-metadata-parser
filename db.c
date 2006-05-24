@@ -18,7 +18,6 @@
 #include <string.h>
 #include <unistd.h>
 #include "db.h"
-#include "debug.h"
 
 GQuark
 yum_db_error_quark (void)
@@ -139,13 +138,11 @@ dbinfo_status (sqlite3 *db, const char *checksum)
         dbchecksum = (const char *) sqlite3_column_text (handle, 1);
 
         if (dbversion != YUM_SQLITE_CACHE_DBVERSION) {
-            debug (DEBUG_LEVEL_INFO,
-                   "Warning: cache file is version %d, we need %d, will regenerate",
-                   dbversion, YUM_SQLITE_CACHE_DBVERSION);
+            g_message ("Warning: cache file is version %d, we need %d, will regenerate",
+                       dbversion, YUM_SQLITE_CACHE_DBVERSION);
             status = DB_STATUS_VERSION_MISMATCH;
         } else if (strcmp (checksum, dbchecksum)) {
-            debug (DEBUG_LEVEL_INFO,
-                   "sqlite cache needs updating, reading in metadata\n");
+            g_message ("sqlite cache needs updating, reading in metadata");
             status = DB_STATUS_CHECKSUM_MISMATCH;
         } else
             status = DB_STATUS_OK;
@@ -502,9 +499,8 @@ yum_db_package_write (sqlite3 *db, sqlite3_stmt *handle, Package *p)
     sqlite3_reset (handle);
 
     if (rc != SQLITE_DONE) {
-        debug (DEBUG_LEVEL_ERROR,
-               "Error adding package to SQL: %s",
-               sqlite3_errmsg (db));
+        g_critical ("Error adding package to SQL: %s",
+                    sqlite3_errmsg (db));
     } else
         p->pkgKey = sqlite3_last_insert_rowid (db);
 }
@@ -555,9 +551,8 @@ yum_db_dependency_write (sqlite3 *db,
     sqlite3_reset (handle);
 
     if (rc != SQLITE_DONE)
-        debug (DEBUG_LEVEL_ERROR,
-               "Error adding dependency to SQL: %s",
-               sqlite3_errmsg (db));
+        g_critical ("Error adding dependency to SQL: %s",
+                    sqlite3_errmsg (db));
 }
 
 sqlite3_stmt *
@@ -598,9 +593,8 @@ yum_db_file_write (sqlite3 *db,
     sqlite3_reset (handle);
 
     if (rc != SQLITE_DONE)
-        debug (DEBUG_LEVEL_ERROR,
-               "Error adding package file to SQL: %s",
-               sqlite3_errmsg (db));
+        g_critical ("Error adding package file to SQL: %s",
+                    sqlite3_errmsg (db));
 }
 
 void
@@ -698,9 +692,8 @@ yum_db_package_ids_write (sqlite3 *db, sqlite3_stmt *handle, Package *p)
     sqlite3_reset (handle);
 
     if (rc != SQLITE_DONE) {
-        debug (DEBUG_LEVEL_ERROR,
-               "Error adding package to SQL: %s",
-               sqlite3_errmsg (db));
+        g_critical ("Error adding package to SQL: %s",
+                    sqlite3_errmsg (db));
     } else
         p->pkgKey = sqlite3_last_insert_rowid (db);
 }
@@ -750,9 +743,8 @@ write_file (gpointer key, gpointer value, gpointer user_data)
     sqlite3_reset (info->handle);
 
     if (rc != SQLITE_DONE) {
-        debug (DEBUG_LEVEL_ERROR,
-               "Error adding file to SQL: %s",
-               sqlite3_errmsg (info->db));
+        g_critical ("Error adding file to SQL: %s",
+                    sqlite3_errmsg (info->db));
     }
 }
 
@@ -878,9 +870,8 @@ yum_db_changelog_write (sqlite3 *db, sqlite3_stmt *handle, Package *p)
         sqlite3_reset (handle);
 
         if (rc != SQLITE_DONE) {
-            debug (DEBUG_LEVEL_ERROR,
-                   "Error adding changelog to SQL: %s",
-                   sqlite3_errmsg (db));
+            g_critical ("Error adding changelog to SQL: %s",
+                        sqlite3_errmsg (db));
         }
     }
 }

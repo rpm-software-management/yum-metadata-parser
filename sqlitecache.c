@@ -17,7 +17,6 @@
 
 #include <Python.h>
 
-#include "debug.h"
 #include "xml-parser.h"
 #include "db.h"
 #include "package.h"
@@ -82,9 +81,8 @@ remove_entry (gpointer key, gpointer value, gpointer user_data)
         sqlite3_reset (info->remove_handle);
 
         if (rc != SQLITE_DONE)
-            debug (DEBUG_LEVEL_WARNING,
-                   "Error removing package from SQL: %s",
-                   sqlite3_errmsg (info->db));
+            g_warning ("Error removing package from SQL: %s",
+                       sqlite3_errmsg (info->db));
 
         info->del_count++;
     }
@@ -118,10 +116,9 @@ update_info_done (UpdateInfo *info, GError **err)
 
     g_timer_stop (info->timer);
     if (!*err) {
-        debug (DEBUG_LEVEL_INFO,
-               "Added %d new packages, deleted %d old in %.2f seconds",
-               info->add_count, info->del_count,
-               g_timer_elapsed (info->timer, NULL));
+        g_message ("Added %d new packages, deleted %d old in %.2f seconds",
+                   info->add_count, info->del_count,
+                   g_timer_elapsed (info->timer, NULL));
     }
 
     g_timer_destroy (info->timer);
@@ -551,15 +548,34 @@ progress_cb (guint32 current, guint32 total, gpointer user_data)
 }
 
 static void
-debug_cb (const char *message,
-          DebugLevel level,
-          gpointer user_data)
+log_cb (const gchar *log_domain,
+        GLogLevelFlags log_level,
+        const gchar *message,
+        gpointer user_data)
 {
     PyObject *callback = (PyObject *) user_data;
+    int level;
     PyObject *args;
     PyObject *result;
 
     args = PyTuple_New (2);
+
+    switch (log_level) {
+    case G_LOG_LEVEL_DEBUG:
+        level = 2;
+        break;
+    case G_LOG_LEVEL_MESSAGE:
+        level = 1;
+        break;
+    case G_LOG_LEVEL_WARNING:
+        level = 0;
+        break;
+    case G_LOG_LEVEL_CRITICAL:
+    default:
+        level = -1;
+        break;
+    }
+
     PyTuple_SET_ITEM (args, 0, PyInt_FromLong (level));
     PyTuple_SET_ITEM (args, 1, PyString_FromString (message));
 
@@ -568,14 +584,20 @@ debug_cb (const char *message,
     Py_XDECREF (result);
 }
 
+typedef char * (*UpdateFn) (const char *md_filename,
+                            const char *checksum,
+                            ProgressFn progress_fn,
+                            gpointer user_data,
+                            GError **err);
+
 static PyObject *
-py_update_primary (PyObject *self, PyObject *args)
+py_update (PyObject *self, PyObject *args, UpdateFn update_fn)
 {
     const char *md_filename = NULL;
     const char *checksum = NULL;
     PyObject *log = NULL;
     PyObject *progress = NULL;
-    int log_id = 0;
+    guint log_id = 0;
     char *db_filename;
     PyObject *ret = NULL;
     GError *err = NULL;
@@ -583,17 +605,18 @@ py_update_primary (PyObject *self, PyObject *args)
     if (!py_parse_args (args, &md_filename, &checksum, &log, &progress))
         return NULL;
 
-    if (log)
-        log_id = debug_add_handler (debug_cb, log);
+    if (log) {
+        GLogLevelFlags level = G_LOG_LEVEL_MESSAGE | G_LOG_LEVEL_WARNING |
+            G_LOG_LEVEL_CRITICAL | G_LOG_LEVEL_DEBUG;
+        log_id = g_log_set_handler (NULL, level, log_cb, log);
+    }
 
-    db_filename = update_primary (md_filename,
-                                  checksum,
-                                  progress != NULL ? progress_cb : NULL,
-                                  progress,
-                                  &err);
+    db_filename = update_fn (md_filename, checksum,
+                             progress != NULL ? progress_cb : NULL,
+                             progress, &err);
 
     if (log_id)
-        debug_remove_handler (log_id);
+        g_log_remove_handler (NULL, log_id);
 
     if (db_filename) {
         ret = PyString_FromString (db_filename);
@@ -604,82 +627,25 @@ py_update_primary (PyObject *self, PyObject *args)
     }
 
     return ret;
+}
+
+
+static PyObject *
+py_update_primary (PyObject *self, PyObject *args)
+{
+    return py_update (self, args, update_primary);
 }
 
 static PyObject *
 py_update_filelist (PyObject *self, PyObject *args)
 {
-    const char *md_filename = NULL;
-    const char *checksum = NULL;
-    PyObject *log = NULL;
-    PyObject *progress = NULL;
-    int log_id = 0;
-    char *db_filename;
-    PyObject *ret = NULL;
-    GError *err = NULL;
-
-    if (!py_parse_args (args, &md_filename, &checksum, &log, &progress))
-        return NULL;
-
-    if (log)
-        log_id = debug_add_handler (debug_cb, log);
-
-    db_filename = update_filelist (md_filename,
-                                   checksum,
-                                   progress != NULL ? progress_cb : NULL,
-                                   progress,
-                                   &err);
-
-    if (log_id)
-        debug_remove_handler (log_id);
-
-    if (db_filename) {
-        ret = PyString_FromString (db_filename);
-        g_free (db_filename);
-    } else {
-        PyErr_SetString (PyExc_TypeError, err->message);
-        g_error_free (err);
-    }
-
-    return ret;
+    return py_update (self, args, update_filelist);
 }
 
 static PyObject *
 py_update_other (PyObject *self, PyObject *args)
 {
-    const char *md_filename = NULL;
-    const char *checksum = NULL;
-    PyObject *log = NULL;
-    PyObject *progress = NULL;
-    int log_id = 0;
-    char *db_filename;
-    PyObject *ret = NULL;
-    GError *err = NULL;
-
-    if (!py_parse_args (args, &md_filename, &checksum, &log, &progress))
-        return NULL;
-
-    if (log)
-        log_id = debug_add_handler (debug_cb, log);
-
-    db_filename = update_other (md_filename,
-                                checksum,
-                                progress != NULL ? progress_cb : NULL,
-                                progress,
-                                &err);
-
-    if (log_id)
-        debug_remove_handler (log_id);
-
-    if (db_filename) {
-        ret = PyString_FromString (db_filename);
-        g_free (db_filename);
-    } else {
-        PyErr_SetString (PyExc_TypeError, err->message);
-        g_error_free (err);
-    }
-
-    return ret;
+    return py_update (self, args, update_other);
 }
 
 static PyMethodDef SqliteMethods[] = {

@@ -1,5 +1,13 @@
 2006-05-24  Tambet Ingo  <tambet@ximian.com>
 
+	* debug.[ch]: Remove. No need for our own logging framework, glib
+	already has one.
+
+	*.[ch]: Use glib messaging/logging functions instead of debug_*.
+
+	* sqlitecache.c: A small cleanup to get rid of some awfully similar
+	looking code.
+
 	* ChangeLog: Start keeping change log.
 
 	* sqlitecache.c (update_primary): Nullify the update info structure,
@@ -9,4 +17,3 @@
 
 	* db.c (yum_db_open): Delete the cache file if the dbversion
 	does not match.
-

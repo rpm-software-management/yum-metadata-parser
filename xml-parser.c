@@ -23,7 +23,6 @@
 #include <libxml/tree.h>
 
 #include "xml-parser.h"
-#include "debug.h"
 
 #define PACKAGE_FIELD_SIZE 1024
 
@@ -466,7 +465,7 @@ primary_sax_warning (void *data, const char *msg, ...)
     va_start (args, msg);
 
     tmp = g_strdup_vprintf (msg, args);
-    debug (DEBUG_LEVEL_WARNING, "* SAX Warning: %s", tmp);
+    g_warning ("* SAX Warning: %s", tmp);
     g_free (tmp);
 
     va_end (args);
@@ -541,7 +540,7 @@ yum_xml_parse_primary (const char *filename,
     rc = xmlSAXUserParseFile (&primary_sax_handler, &ctx, filename);
 
     if (ctx.current_package) {
-        debug (DEBUG_LEVEL_WARNING, "Incomplete package lost");
+        g_warning ("Incomplete package lost");
         package_free (ctx.current_package);
     }
 
@@ -752,7 +751,7 @@ filelist_sax_warning (void *data, const char *msg, ...)
     va_start (args, msg);
 
     tmp = g_strdup_vprintf (msg, args);
-    debug (DEBUG_LEVEL_WARNING, "* SAX Warning: %s", tmp);
+    g_warning ("* SAX Warning: %s", tmp);
     g_free (tmp);
 
     va_end (args);
@@ -826,7 +825,7 @@ yum_xml_parse_filelists (const char *filename,
     rc = xmlSAXUserParseFile (&filelist_sax_handler, &ctx, filename);
 
     if (ctx.current_package) {
-        debug (DEBUG_LEVEL_WARNING, "Incomplete package lost");
+        g_warning ("Incomplete package lost");
         package_free (ctx.current_package);
     }
 
@@ -1044,7 +1043,7 @@ other_sax_warning (void *data, const char *msg, ...)
     va_start (args, msg);
 
     tmp = g_strdup_vprintf (msg, args);
-    debug (DEBUG_LEVEL_WARNING, "* SAX Warning: %s", tmp);
+    g_warning ("* SAX Warning: %s", tmp);
     g_free (tmp);
 
     va_end (args);
@@ -1118,7 +1117,7 @@ yum_xml_parse_other (const char *filename,
     rc = xmlSAXUserParseFile (&other_sax_handler, &ctx, filename);
 
     if (ctx.current_package) {
-        debug (DEBUG_LEVEL_WARNING, "Incomplete package lost");
+        g_warning ("Incomplete package lost");
         package_free (ctx.current_package);
     }
 
