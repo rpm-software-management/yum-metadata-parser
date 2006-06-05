@@ -1,5 +1,10 @@
 2006-06-05  Tambet Ingo  <tambet@ximian.com>
 
+	* yum-metadata-parser.spec: Relax the required yum version a bit, the
+	next release from the 2.6 branch works with this as well.
+
+2006-06-05  Tambet Ingo  <tambet@ximian.com>
+
 	Patch from Terje Rosten <terje.rosten@ntnu.no>
 
 	* setup.py: Set the name of the module correctly.
