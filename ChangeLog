@@ -1,3 +1,13 @@
+2006-06-05  Tambet Ingo  <tambet@ximian.com>
+
+	Patch from Terje Rosten <terje.rosten@ntnu.no>
+
+	* setup.py: Set the name of the module correctly.
+
+	* yum-metadata-parser.spec: Implement.
+
+	* MANIFEST.in: New file.
+
 2006-05-24  Tambet Ingo  <tambet@ximian.com>
 
 	* debug.[ch]: Remove. No need for our own logging framework, glib
