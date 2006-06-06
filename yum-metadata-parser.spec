@@ -9,7 +9,11 @@ License: GPL
 Group: Development/Libraries
 URL: http://devel.linux.duke.edu/cgi-bin/viewcvs.cgi/yum-metadata-parser/
 Requires: yum >= 2.6.2
-BuildRequires: python-devel, glib2-devel, libxml2-devel, sqlite-devel
+BuildRequires: python-devel
+BuildRequires: glib2-devel
+BuildRequires: libxml2-devel
+BuildRequires: sqlite-devel
+BuildRequires: pkgconfig
 BuildRoot:  %{_tmppath}/%{name}-%{version}-%{release}-root-%(%{__id_u} -n)
 
 %description
