@@ -585,8 +585,8 @@ yum_db_file_write (sqlite3 *db,
 {
     int rc;
 
-    sqlite3_bind_text (handle, 1, file->type, -1, SQLITE_STATIC);
-    sqlite3_bind_text (handle, 2, file->name, -1, SQLITE_STATIC);
+    sqlite3_bind_text (handle, 1, file->name, -1, SQLITE_STATIC);
+    sqlite3_bind_text (handle, 2, file->type, -1, SQLITE_STATIC);
     sqlite3_bind_int  (handle, 3, pkgKey);
 
     rc = sqlite3_step (handle);
