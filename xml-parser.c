@@ -178,7 +178,9 @@ primary_parser_package_start (PrimarySAXContext *ctx,
             value = attrs[++i];
 
             if (!strcmp (attr, "href"))
-                p->location_href = g_string_chunk_insert (p->chunk, value);;
+                p->location_href = g_string_chunk_insert (p->chunk, value);
+            else if (!strcmp (attr, "xml:base"))
+                p->location_base = g_string_chunk_insert (p->chunk, value);
         }
     }
 }
