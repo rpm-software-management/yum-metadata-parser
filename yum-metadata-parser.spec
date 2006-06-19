@@ -2,8 +2,8 @@
 
 Summary: A fast metadata parser for yum
 Name: yum-metadata-parser
-Version: 1.0
-Release: 3%{?dist}
+Version: 1.0.1
+Release: 1%{?dist}
 Source0: %{name}-%{version}.tar.gz
 License: GPL
 Group: Development/Libraries
@@ -40,6 +40,9 @@ Fast metadata parser for yum implemented in C.
 %{python_sitelib_platform}/sqlitecachec.pyo
 
 %changelog
+* Mon Jun 19 2006 Seth Vidal <skvidal at linux.duke.edu>
+- 1.0.1
+
 * Mon Jun 05 2006 Tambet Ingo <tambet@ximian.com> - 1.0-3
 - Require yum >= 2.6.2
 
