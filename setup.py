@@ -23,7 +23,7 @@ module = Extension('_sqlitecache',
                               'sqlitecache.c'])
 
 setup (name = 'yum-metadata-parser',
-       version = '1.0',
+       version = '1.0.1',
        description = 'A fast YUM meta-data parser',
 	   py_modules = ['sqlitecachec'],
        ext_modules = [module])
