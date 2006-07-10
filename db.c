@@ -388,13 +388,19 @@ yum_db_create_primary_tables (sqlite3 *db, GError **err)
         "  epoch TEXT,"
         "  version TEXT,"
         "  release TEXT,"
-        "  pkgKey TEXT)";
+        "  pkgKey TEXT %s)";
 
     const char *deps[] = { "requires", "provides", "conflicts", "obsoletes", NULL };
     int i;
 
     for (i = 0; deps[i]; i++) {
-        char *query = g_strdup_printf (sql, deps[i]);
+        const char *prereq;
+        if (!strcmp(deps[i], "requires")) {
+            prereq = ", pre BOOLEAN DEFAULT FALSE";
+        } else
+            prereq = "";
+
+        char *query = g_strdup_printf (sql, deps[i], prereq);
         rc = sqlite3_exec (db, query, NULL, NULL, NULL);
         g_free (query);
 
