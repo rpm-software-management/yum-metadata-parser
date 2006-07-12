@@ -1,34 +1,148 @@
-2006-06-05  Tambet Ingo  <tambet@ximian.com>
+2006-07-10 12:54  pnasrat
 
-	* yum-metadata-parser.spec: Relax the required yum version a bit, the
-	next release from the 2.6 branch works with this as well.
+	* db.c, db.h: Move to dbversion 9 - add pre for requires
 
-2006-06-05  Tambet Ingo  <tambet@ximian.com>
+2006-06-19 00:37  skvidal
 
-	Patch from Terje Rosten <terje.rosten@ntnu.no>
+	* yum-metadata-parser.spec: 
+	update specfile
 
-	* setup.py: Set the name of the module correctly.
+2006-06-18 21:54  skvidal
 
-	* yum-metadata-parser.spec: Implement.
+	* setup.py: 
+	bump second minor version number
 
-	* MANIFEST.in: New file.
+2006-06-15 13:36  pnasrat
 
-2006-05-24  Tambet Ingo  <tambet@ximian.com>
+	* xml-parser.c: Actually populate location_base attribute - used
+	for cd installs
 
-	* debug.[ch]: Remove. No need for our own logging framework, glib
-	already has one.
+2006-06-14 16:03  pnasrat
 
-	*.[ch]: Use glib messaging/logging functions instead of debug_*.
+	* db.c: Fix the order to correspond with the schema
 
-	* sqlitecache.c: A small cleanup to get rid of some awfully similar
-	looking code.
+2006-06-06 09:41  skvidal
 
-	* ChangeLog: Start keeping change log.
+	* MANIFEST.in: add spec file in MANIFEST.in as Terje mentioned
 
-	* sqlitecache.c (update_primary): Nullify the update info structure,
-	so we don't find garbage from it on freeing.
-	(update_filelist): Ditto.
-	(update_other): Ditto.
+2006-06-06 00:00  katzj
 
-	* db.c (yum_db_open): Delete the cache file if the dbversion
-	does not match.
+	* yum-metadata-parser.spec: add pkgconfig as a BR
+
+2006-06-06 00:00  katzj
+
+	* sqlitecachec.py: doesn't actually have anything to run
+
+2006-06-05 13:58  katzj
+
+	* yum-metadata-parser.spec: glib2, not glib
+
+2006-06-05 09:02  tambet
+
+	* ChangeLog, yum-metadata-parser.spec: 2006-06-05  Tambet Ingo 
+	<tambet@ximian.com>
+	
+		* yum-metadata-parser.spec: Relax the required yum version
+	a bit, the
+		next release from the 2.6 branch works with this as well.
+
+2006-06-05 08:58  tambet
+
+	* ChangeLog, MANIFEST.in, setup.py, yum-metadata-parser.spec:
+	2006-06-05  Tambet Ingo  <tambet@ximian.com>
+	
+		Patch from Terje Rosten <terje.rosten@ntnu.no>
+	
+		* setup.py: Set the name of the module correctly.
+	
+		* yum-metadata-parser.spec: Implement.
+	
+		* MANIFEST.in: New file.
+
+2006-05-24 16:03  tambet
+
+	* ChangeLog, db.c, debug.c, debug.h, setup.py, sqlitecache.c,
+	xml-parser.c: 2006-05-24  Tambet Ingo  <tambet@ximian.com>
+	
+		* debug.[ch]: Remove. No need for our own logging
+	framework, glib
+		already has one.
+	
+		*.[ch]: Use glib messaging/logging functions instead of
+	debug_*.
+	
+		* sqlitecache.c: A small cleanup to get rid of some awfully
+	similar
+		looking code.
+
+2006-05-24 10:20  tambet
+
+	* ChangeLog, db.c, sqlitecache.c: 2006-05-24  Tambet Ingo 
+	<tambet@ximian.com>
+	
+		* ChangeLog: Start keeping change log.
+	
+		* sqlitecache.c (update_primary): Nullify the update info
+	structure,
+		so we don't find garbage from it on freeing.
+		(update_filelist): Ditto.
+		(update_other): Ditto.
+	
+		* db.c (yum_db_open): Delete the cache file if the
+	dbversion
+		does not match.
+
+2006-05-24 08:59  tambet
+
+	* AUTHORS, README: 2006-05-24  Tambet Ingo  <tambet@ximian.com>
+	
+		* AUTHORS: Add.
+	
+		* README: Add.
+
+2006-05-24 08:51  tambet
+
+	* .cvsignore: 2006-05-24  Tambet Ingo  <tambet@ximian.com>
+	
+		* .cvsignore: Add.
+
+2006-05-24 08:49  tambet
+
+	* db.c, db.h, setup.py, sqlitecache.c, sqlitecache.py,
+	sqlitecachec.py, xml-parser.c, xml-parser.h: 2006-05-24  Tambet
+	Ingo  <tambet@ximian.com>
+	
+		* Implement the database opening correctly, just like yum
+	does.
+	
+		* Implement raising the correct exception if something goes
+	wrong.
+	
+		* Some small performance optimizations: Don't copy
+	uninteresting XML
+		characters to the local buffer, use typed python object
+	initialization
+		functions instead of BuildValue(), and add a dedicated
+	string chunk to
+		package ids collection instead of doing one malloc per id.
+	
+		* Rename sqlitecache.py to sqlitecachec.py
+
+2006-05-15 23:53  skvidal
+
+	* debug.c, debug.h, sqlitecache.c, sqlitecache.py, xml-parser.c,
+	xml-parser.h: 
+	committing Tambet's patch:
+	
+	"Here's a patch to fix the logging output and to implement the
+	progress bar callback. The previous patch that implemented logging
+	always added a log callback, so it worked correctly for the first
+	time, but every other time the output callback was added and a
+	duplicate log line was printed. "
+
+2006-05-11 13:33  skvidal
+
+	* db.c, db.h, debug.c, debug.h, package.c, package.h, setup.py,
+	sqlitecache.c, sqlitecache.py, xml-parser.c, xml-parser.h: Initial
+	revision
+
