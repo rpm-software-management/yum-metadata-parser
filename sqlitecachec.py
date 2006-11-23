@@ -17,7 +17,8 @@ import _sqlitecache
 
 class RepodataParserSqlite:
     def __init__(self, storedir, repoid, callback=None):
-		self.callback = callback
+        self.callback = callback
+        self.repoid = repoid
 
     def open_database(self, filename):
         if not filename:
@@ -29,18 +30,21 @@ class RepodataParserSqlite:
            if required"""
         return self.open_database(_sqlitecache.update_primary(location,
 															  checksum,
-															  self.callback))
+                                                              self.callback,
+                                                              self.repoid))
 
     def getFilelists(self, location, checksum):
         """Load filelist.xml.gz from an sqlite cache and update it if 
            required"""
         return self.open_database(_sqlitecache.update_filelist(location,
 															   checksum,
-															   self.callback))
+                                                               self.callback,
+                                                               self.repoid))
 
     def getOtherdata(self, location, checksum):
         """Load other.xml.gz from an sqlite cache and update it if required"""
         return self.open_database(_sqlitecache.update_other(location,
 															checksum,
-															self.callback))
+                                                            self.callback,
+                                                            self.repoid))
     

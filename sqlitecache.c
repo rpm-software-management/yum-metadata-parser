@@ -24,7 +24,8 @@
 /* Make room for 2500 package ids, 40 bytes + '\0' each */
 #define PACKAGE_IDS_CHUNK 41 * 2500
 
-typedef void (*ProgressFn) (guint32 current, guint32 total, gpointer user_data);
+typedef void (*ProgressFn) (guint32 current, guint32 total,
+                            gpointer python_callback, gpointer user_data);
 
 typedef struct {
     sqlite3 *db;
@@ -38,6 +39,7 @@ typedef struct {
     GStringChunk *package_ids_chunk;
     GTimer *timer;
     ProgressFn progress_cb;
+    gpointer python_callback;
     gpointer user_data;
 } UpdateInfo;
 
@@ -215,6 +217,7 @@ add_package (Package *package, gpointer user_data)
     if (info->count_from_md > 0 && info->progress_cb)
         info->progress_cb (++info->packages_seen,
                            info->count_from_md,
+                           info->python_callback,
                            info->user_data);
 }
 
@@ -239,6 +242,7 @@ static char *
 update_primary (const char *md_filename,
                 const char *checksum,
                 ProgressFn progress_cb,
+                gpointer python_callback,
                 gpointer user_data,
                 GError **err)
 {
@@ -264,6 +268,7 @@ update_primary (const char *md_filename,
         goto cleanup;
 
     update_info->progress_cb = progress_cb;
+    update_info->python_callback = python_callback;
     update_info->user_data = user_data;
     package_writer_info_init (&info, update_info->db, err);
     if (*err)
@@ -324,6 +329,7 @@ update_filelist_cb (Package *p, gpointer user_data)
     if (update_info->count_from_md > 0 && update_info->progress_cb)
         update_info->progress_cb (++update_info->packages_seen,
                                   update_info->count_from_md,
+                                  update_info->python_callback,
                                   update_info->user_data);
 }
 
@@ -331,6 +337,7 @@ static char *
 update_filelist (const char *md_filename,
                  const char *checksum,
                  ProgressFn progress_cb,
+                 gpointer python_callback,
                  gpointer user_data,
                  GError **err)
 {
@@ -355,6 +362,7 @@ update_filelist (const char *md_filename,
     if (*err)
         goto cleanup;
     update_info->progress_cb = progress_cb;
+    update_info->python_callback = python_callback;
     update_info->user_data = user_data;
     info.pkg_handle = yum_db_package_ids_prepare (update_info->db, err);
     if (*err)
@@ -425,6 +433,7 @@ update_other_cb (Package *p, gpointer user_data)
     if (update_info->count_from_md > 0 && update_info->progress_cb)
         update_info->progress_cb (++update_info->packages_seen,
                                   update_info->count_from_md,
+                                  update_info->python_callback,
                                   update_info->user_data);
 }
 
@@ -432,6 +441,7 @@ static char *
 update_other (const char *md_filename,
               const char *checksum,
               ProgressFn progress_cb,
+              gpointer python_callback,
               gpointer user_data,
               GError **err)
 {
@@ -456,6 +466,7 @@ update_other (const char *md_filename,
     if (*err)
         goto cleanup;
     update_info->progress_cb = progress_cb;
+    update_info->python_callback = python_callback;
     update_info->user_data = user_data;
     info.pkg_handle = yum_db_package_ids_prepare (update_info->db, err);
     if (*err)
@@ -503,11 +514,13 @@ py_parse_args (PyObject *args,
                const char **md_filename,
                const char **checksum,
                PyObject **log,
-               PyObject **progress)
+               PyObject **progress,
+               PyObject **repoid)
 {
     PyObject *callback;
 
-    if (!PyArg_ParseTuple (args, "ssO", md_filename, checksum, &callback))
+    if (!PyArg_ParseTuple (args, "ssOO", md_filename, checksum, &callback,
+                           repoid))
         return FALSE;
 
     if (PyObject_HasAttrString (callback, "log")) {
@@ -532,15 +545,20 @@ py_parse_args (PyObject *args,
 }
 
 static void
-progress_cb (guint32 current, guint32 total, gpointer user_data)
-    {
-    PyObject *progress = (PyObject *) user_data;
+progress_cb (guint32 current, guint32 total, gpointer python_callback,
+             gpointer user_data)
+{
+    PyObject *progress = (PyObject *) python_callback;
+    PyObject *repoid = (PyObject *) user_data;
     PyObject *args;
     PyObject *result;
 
-    args = PyTuple_New (2);
+    Py_INCREF(repoid);
+   
+    args = PyTuple_New (3);
     PyTuple_SET_ITEM (args, 0, PyInt_FromLong (current));
     PyTuple_SET_ITEM (args, 1, PyInt_FromLong (total));
+    PyTuple_SET_ITEM (args, 2, repoid);
 
     result = PyEval_CallObject (progress, args);
     Py_DECREF (args);
@@ -587,6 +605,7 @@ log_cb (const gchar *log_domain,
 typedef char * (*UpdateFn) (const char *md_filename,
                             const char *checksum,
                             ProgressFn progress_fn,
+                            gpointer python_callback,
                             gpointer user_data,
                             GError **err);
 
@@ -597,12 +616,14 @@ py_update (PyObject *self, PyObject *args, UpdateFn update_fn)
     const char *checksum = NULL;
     PyObject *log = NULL;
     PyObject *progress = NULL;
+    PyObject *repoid = NULL;
     guint log_id = 0;
     char *db_filename;
     PyObject *ret = NULL;
     GError *err = NULL;
 
-    if (!py_parse_args (args, &md_filename, &checksum, &log, &progress))
+    if (!py_parse_args (args, &md_filename, &checksum, &log, &progress,
+                        &repoid))
         return NULL;
 
     if (log) {
@@ -613,7 +634,7 @@ py_update (PyObject *self, PyObject *args, UpdateFn update_fn)
 
     db_filename = update_fn (md_filename, checksum,
                              progress != NULL ? progress_cb : NULL,
-                             progress, &err);
+                             progress, repoid, &err);
 
     if (log_id)
         g_log_remove_handler (NULL, log_id);
