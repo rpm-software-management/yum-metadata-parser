@@ -1,3 +1,8 @@
+2006-11-22 20:23  jbowes
+
+	* sqlitecache.c: Use structs and function pointers to reduce code
+	duplication.
+
 2006-11-22 20:20  jbowes
 
 	* sqlitecache.c, sqlitecachec.py: Display repoid while populating

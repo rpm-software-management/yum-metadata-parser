@@ -24,10 +24,20 @@
 /* Make room for 2500 package ids, 40 bytes + '\0' each */
 #define PACKAGE_IDS_CHUNK 41 * 2500
 
-typedef void (*ProgressFn) (guint32 current, guint32 total,
-                            gpointer python_callback, gpointer user_data);
+typedef struct _UpdateInfo UpdateInfo;
 
-typedef struct {
+typedef void (*InfoInitFn) (UpdateInfo *update_info, sqlite3 *db, GError **err);
+typedef void (*InfoCleanFn) (UpdateInfo *update_info);
+
+typedef void (*XmlParseFn)  (const char *filename,
+                             CountFn count_callback,
+                             PackageFn package_callback,
+                             gpointer user_data,
+                             GError **err);
+
+typedef void (*WriteDbPackageFn) (UpdateInfo *update_info, Package *package);
+
+struct _UpdateInfo {
     sqlite3 *db;
     sqlite3_stmt *remove_handle;
     guint32 count_from_md;
@@ -38,10 +48,16 @@ typedef struct {
     GHashTable *all_packages;
     GStringChunk *package_ids_chunk;
     GTimer *timer;
-    ProgressFn progress_cb;
     gpointer python_callback;
+    
+    InfoInitFn info_init;
+    InfoCleanFn info_clean;
+    CreateTablesFn create_tables;
+    WriteDbPackageFn write_package;
+    XmlParseFn xml_parse;
+
     gpointer user_data;
-} UpdateInfo;
+};
 
 static void
 update_info_init (UpdateInfo *info, GError **err)
@@ -126,6 +142,7 @@ update_info_done (UpdateInfo *info, GError **err)
     g_timer_destroy (info->timer);
 }
 
+
 /* Primary */
 
 typedef struct {
@@ -139,8 +156,10 @@ typedef struct {
 } PackageWriterInfo;
 
 static void
-package_writer_info_init (PackageWriterInfo *info, sqlite3 *db, GError **err)
+package_writer_info_init (UpdateInfo *update_info, sqlite3 *db, GError **err)
 {
+    PackageWriterInfo *info = (PackageWriterInfo *) update_info;
+
     info->pkg_handle = yum_db_package_prepare (db, err);
     if (*err)
         return;
@@ -198,32 +217,10 @@ write_package_to_db (UpdateInfo *update_info, Package *package)
 }
 
 static void
-add_package (Package *package, gpointer user_data)
+package_writer_info_clean (UpdateInfo *update_info)
 {
-    UpdateInfo *info = (UpdateInfo *) user_data;
-
-    g_hash_table_insert (info->all_packages,
-                         g_string_chunk_insert (info->package_ids_chunk,
-                                                package->pkgId),
-                         GINT_TO_POINTER (1));
-
-    if (g_hash_table_lookup (info->current_packages,
-                             package->pkgId) == NULL) {
-
-        write_package_to_db (info, package);
-        info->add_count++;
-    }
-
-    if (info->count_from_md > 0 && info->progress_cb)
-        info->progress_cb (++info->packages_seen,
-                           info->count_from_md,
-                           info->python_callback,
-                           info->user_data);
-}
-
-static void
-package_writer_info_clean (PackageWriterInfo *info)
-{
+    PackageWriterInfo *info = (PackageWriterInfo *) update_info;
+    
     if (info->pkg_handle)
         sqlite3_finalize (info->pkg_handle);
     if (info->requires_handle)
@@ -238,66 +235,6 @@ package_writer_info_clean (PackageWriterInfo *info)
         sqlite3_finalize (info->files_handle);
 }
 
-static char *
-update_primary (const char *md_filename,
-                const char *checksum,
-                ProgressFn progress_cb,
-                gpointer python_callback,
-                gpointer user_data,
-                GError **err)
-{
-    PackageWriterInfo info;
-    UpdateInfo *update_info = &info.update_info;
-    char *db_filename;
-
-    memset (&info, 0, sizeof (PackageWriterInfo));
-
-    db_filename = yum_db_filename (md_filename);
-    update_info->db = yum_db_open (db_filename, checksum,
-                                   yum_db_create_primary_tables,
-                                   err);
-
-    if (*err != NULL)
-        goto cleanup;
-
-    if (!update_info->db)
-        return db_filename;
-
-    update_info_init (update_info, err);
-    if (*err)
-        goto cleanup;
-
-    update_info->progress_cb = progress_cb;
-    update_info->python_callback = python_callback;
-    update_info->user_data = user_data;
-    package_writer_info_init (&info, update_info->db, err);
-    if (*err)
-        goto cleanup;
-
-    sqlite3_exec (update_info->db, "BEGIN", NULL, NULL, NULL);
-    yum_xml_parse_primary (md_filename, count_cb, add_package, &info, err);
-    if (*err)
-        goto cleanup;
-    sqlite3_exec (update_info->db, "COMMIT", NULL, NULL, NULL);
-
-    update_info_remove_old_entries (update_info);
-
-    yum_db_dbinfo_update (update_info->db, checksum, err);
-
- cleanup:
-    package_writer_info_clean (&info);
-    update_info_done (update_info, err);
-
-    if (update_info->db)
-        sqlite3_close (update_info->db);
-
-    if (*err) {
-        g_free (db_filename);
-        db_filename = NULL;
-    }
-
-    return db_filename;
-}
 
 /* Filelists */
 
@@ -308,100 +245,37 @@ typedef struct {
 } FileListInfo;
 
 static void
-update_filelist_cb (Package *p, gpointer user_data)
+update_filelist_info_init (UpdateInfo *update_info, sqlite3 *db, GError **err)
 {
-    FileListInfo *info = (FileListInfo *) user_data;
-    UpdateInfo *update_info = &info->update_info;
+    FileListInfo *info = (FileListInfo *) update_info;
 
-    g_hash_table_insert (update_info->all_packages,
-                         g_string_chunk_insert (update_info->package_ids_chunk,
-                                                p->pkgId),
-                         GINT_TO_POINTER (1));
+    info->pkg_handle = yum_db_package_ids_prepare (db, err);
+    if (*err)
+        return;
 
-    if (g_hash_table_lookup (update_info->current_packages,
-                             p->pkgId) == NULL) {
-
-        yum_db_package_ids_write (update_info->db, info->pkg_handle, p);
-        yum_db_filelists_write (update_info->db, info->file_handle, p);
-        update_info->add_count++;
-    }
-
-    if (update_info->count_from_md > 0 && update_info->progress_cb)
-        update_info->progress_cb (++update_info->packages_seen,
-                                  update_info->count_from_md,
-                                  update_info->python_callback,
-                                  update_info->user_data);
+    info->file_handle = yum_db_filelists_prepare (db, err);
 }
 
-static char *
-update_filelist (const char *md_filename,
-                 const char *checksum,
-                 ProgressFn progress_cb,
-                 gpointer python_callback,
-                 gpointer user_data,
-                 GError **err)
+static void
+update_filelist_info_clean (UpdateInfo *update_info)
 {
-    FileListInfo info;
-    UpdateInfo *update_info = &info.update_info;
-    char *db_filename;
+    FileListInfo *info = (FileListInfo *) update_info;
 
-    memset (&info, 0, sizeof (FileListInfo));
-
-    db_filename = yum_db_filename (md_filename);
-    update_info->db = yum_db_open (db_filename, checksum,
-                                   yum_db_create_filelist_tables,
-                                   err);
-
-    if (*err)
-        goto cleanup;
-
-    if (!update_info->db)
-        return db_filename;
-
-    update_info_init (update_info, err);
-    if (*err)
-        goto cleanup;
-    update_info->progress_cb = progress_cb;
-    update_info->python_callback = python_callback;
-    update_info->user_data = user_data;
-    info.pkg_handle = yum_db_package_ids_prepare (update_info->db, err);
-    if (*err)
-        goto cleanup;
-
-    info.file_handle = yum_db_filelists_prepare (update_info->db, err);
-    if (*err)
-        goto cleanup;
-
-    sqlite3_exec (update_info->db, "BEGIN", NULL, NULL, NULL);
-    yum_xml_parse_filelists (md_filename,
-                             count_cb,
-                             update_filelist_cb,
-                             &info,
-                             err);
-    if (*err)
-        goto cleanup;
-    sqlite3_exec (update_info->db, "COMMIT", NULL, NULL, NULL);
-
-    update_info_remove_old_entries (update_info);
-    yum_db_dbinfo_update (update_info->db, checksum, err);
-
- cleanup:
-    update_info_done (update_info, err);
-
-    if (info.pkg_handle)
-        sqlite3_finalize (info.pkg_handle);
-    if (info.file_handle)
-        sqlite3_finalize (info.file_handle);
-    if (update_info->db)
-        sqlite3_close (update_info->db);
-
-    if (*err) {
-        g_free (db_filename);
-        db_filename = NULL;
-    }
-
-    return db_filename;
+    if (info->pkg_handle)
+        sqlite3_finalize (info->pkg_handle);
+    if (info->file_handle)
+        sqlite3_finalize (info->file_handle);
 }
+
+static void
+write_filelist_package_to_db (UpdateInfo *update_info, Package *package)
+{
+    FileListInfo *info = (FileListInfo *) update_info;
+
+    yum_db_package_ids_write (update_info->db, info->pkg_handle, package);
+    yum_db_filelists_write (update_info->db, info->file_handle, package);
+}
+
 
 /* Other */
 
@@ -412,10 +286,63 @@ typedef struct {
 } UpdateOtherInfo;
 
 static void
-update_other_cb (Package *p, gpointer user_data)
+update_other_info_init (UpdateInfo *update_info, sqlite3 *db, GError **err)
 {
-    UpdateOtherInfo *info = (UpdateOtherInfo *) user_data;
-    UpdateInfo *update_info = &info->update_info;
+    UpdateOtherInfo *info = (UpdateOtherInfo *) update_info;
+    info->pkg_handle = yum_db_package_ids_prepare (db, err);
+    if (*err)
+        return;
+
+    info->changelog_handle = yum_db_changelog_prepare (db, err);
+}
+
+static void
+update_other_info_clean (UpdateInfo *update_info)
+{
+    UpdateOtherInfo *info = (UpdateOtherInfo *) update_info;
+
+    if (info->pkg_handle)
+        sqlite3_finalize (info->pkg_handle);
+    if (info->changelog_handle)
+        sqlite3_finalize (info->changelog_handle);
+}
+
+static void
+write_other_package_to_db (UpdateInfo *update_info, Package *package)
+{
+    UpdateOtherInfo *info = (UpdateOtherInfo *) update_info;
+
+    yum_db_package_ids_write (update_info->db, info->pkg_handle, package);
+    yum_db_changelog_write (update_info->db, info->changelog_handle, package);
+}
+
+
+/*****************************************************************************/
+
+static void
+progress_cb (UpdateInfo *update_info)
+{
+    PyObject *progress = (PyObject *) update_info->python_callback;
+    PyObject *repoid = (PyObject *) update_info->user_data;
+    PyObject *args;
+    PyObject *result;
+
+    Py_INCREF(repoid);
+   
+    args = PyTuple_New (3);
+    PyTuple_SET_ITEM (args, 0, PyInt_FromLong (update_info->packages_seen));
+    PyTuple_SET_ITEM (args, 1, PyInt_FromLong (update_info->count_from_md));
+    PyTuple_SET_ITEM (args, 2, repoid);
+
+    result = PyEval_CallObject (progress, args);
+    Py_DECREF (args);
+    Py_XDECREF (result);
+}
+
+static void
+update_package_cb (Package *p, gpointer user_data)
+{
+    UpdateInfo *update_info = (UpdateInfo *) user_data;
 
     g_hash_table_insert (update_info->all_packages,
                          g_string_chunk_insert (update_info->package_ids_chunk,
@@ -424,36 +351,30 @@ update_other_cb (Package *p, gpointer user_data)
 
     if (g_hash_table_lookup (update_info->current_packages,
                              p->pkgId) == NULL) {
-
-        yum_db_package_ids_write (update_info->db, info->pkg_handle, p);
-        yum_db_changelog_write (update_info->db, info->changelog_handle, p);
+        
+        update_info->write_package (update_info, p);
         update_info->add_count++;
     }
 
-    if (update_info->count_from_md > 0 && update_info->progress_cb)
-        update_info->progress_cb (++update_info->packages_seen,
-                                  update_info->count_from_md,
-                                  update_info->python_callback,
-                                  update_info->user_data);
+    if (update_info->count_from_md > 0 && update_info->python_callback) {
+        update_info->packages_seen++;
+        progress_cb (update_info);
+    }
 }
 
 static char *
-update_other (const char *md_filename,
-              const char *checksum,
-              ProgressFn progress_cb,
-              gpointer python_callback,
-              gpointer user_data,
-              GError **err)
+update_packages (UpdateInfo *update_info,
+                 const char *md_filename,
+                 const char *checksum,
+                 gpointer python_callback,
+                 gpointer user_data,
+                 GError **err)
 {
-    UpdateOtherInfo info;
-    UpdateInfo *update_info = &info.update_info;
     char *db_filename;
-
-    memset (&info, 0, sizeof (UpdateOtherInfo));
 
     db_filename = yum_db_filename (md_filename);
     update_info->db = yum_db_open (db_filename, checksum,
-                                   yum_db_create_other_tables,
+                                   update_info->create_tables,
                                    err);
 
     if (*err)
@@ -465,23 +386,20 @@ update_other (const char *md_filename,
     update_info_init (update_info, err);
     if (*err)
         goto cleanup;
-    update_info->progress_cb = progress_cb;
+    
     update_info->python_callback = python_callback;
     update_info->user_data = user_data;
-    info.pkg_handle = yum_db_package_ids_prepare (update_info->db, err);
-    if (*err)
-        goto cleanup;
 
-    info.changelog_handle = yum_db_changelog_prepare (update_info->db, err);
+    update_info->info_init (update_info, update_info->db, err);
     if (*err)
         goto cleanup;
 
     sqlite3_exec (update_info->db, "BEGIN", NULL, NULL, NULL);
-    yum_xml_parse_other (md_filename,
-                         count_cb,
-                         update_other_cb,
-                         &info,
-                         err);
+    update_info->xml_parse (md_filename,
+                            count_cb,
+                            update_package_cb,
+                            update_info,
+                            err);
     if (*err)
         goto cleanup;
     sqlite3_exec (update_info->db, "COMMIT", NULL, NULL, NULL);
@@ -490,12 +408,9 @@ update_other (const char *md_filename,
     yum_db_dbinfo_update (update_info->db, checksum, err);
 
  cleanup:
+    update_info->info_clean (update_info);
     update_info_done (update_info, err);
 
-    if (info.pkg_handle)
-        sqlite3_finalize (info.pkg_handle);
-    if (info.changelog_handle)
-        sqlite3_finalize (info.changelog_handle);
     if (update_info->db)
         sqlite3_close (update_info->db);
 
@@ -545,27 +460,6 @@ py_parse_args (PyObject *args,
 }
 
 static void
-progress_cb (guint32 current, guint32 total, gpointer python_callback,
-             gpointer user_data)
-{
-    PyObject *progress = (PyObject *) python_callback;
-    PyObject *repoid = (PyObject *) user_data;
-    PyObject *args;
-    PyObject *result;
-
-    Py_INCREF(repoid);
-   
-    args = PyTuple_New (3);
-    PyTuple_SET_ITEM (args, 0, PyInt_FromLong (current));
-    PyTuple_SET_ITEM (args, 1, PyInt_FromLong (total));
-    PyTuple_SET_ITEM (args, 2, repoid);
-
-    result = PyEval_CallObject (progress, args);
-    Py_DECREF (args);
-    Py_XDECREF (result);
-}
-
-static void
 log_cb (const gchar *log_domain,
         GLogLevelFlags log_level,
         const gchar *message,
@@ -602,15 +496,8 @@ log_cb (const gchar *log_domain,
     Py_XDECREF (result);
 }
 
-typedef char * (*UpdateFn) (const char *md_filename,
-                            const char *checksum,
-                            ProgressFn progress_fn,
-                            gpointer python_callback,
-                            gpointer user_data,
-                            GError **err);
-
 static PyObject *
-py_update (PyObject *self, PyObject *args, UpdateFn update_fn)
+py_update (PyObject *self, PyObject *args, UpdateInfo *update_info)
 {
     const char *md_filename = NULL;
     const char *checksum = NULL;
@@ -632,9 +519,8 @@ py_update (PyObject *self, PyObject *args, UpdateFn update_fn)
         log_id = g_log_set_handler (NULL, level, log_cb, log);
     }
 
-    db_filename = update_fn (md_filename, checksum,
-                             progress != NULL ? progress_cb : NULL,
-                             progress, repoid, &err);
+    db_filename = update_packages (update_info, md_filename, checksum,
+                                   progress, repoid, &err);
 
     if (log_id)
         g_log_remove_handler (NULL, log_id);
@@ -650,23 +536,49 @@ py_update (PyObject *self, PyObject *args, UpdateFn update_fn)
     return ret;
 }
 
-
 static PyObject *
 py_update_primary (PyObject *self, PyObject *args)
 {
-    return py_update (self, args, update_primary);
+    PackageWriterInfo info;
+    memset (&info, 0, sizeof (PackageWriterInfo));
+
+    info.update_info.info_init = package_writer_info_init;
+    info.update_info.info_clean = package_writer_info_clean;
+    info.update_info.create_tables = yum_db_create_primary_tables;
+    info.update_info.write_package = write_package_to_db;
+    info.update_info.xml_parse = yum_xml_parse_primary;
+
+    return py_update (self, args, (UpdateInfo *) &info);
 }
 
 static PyObject *
 py_update_filelist (PyObject *self, PyObject *args)
 {
-    return py_update (self, args, update_filelist);
+    FileListInfo info;
+    memset (&info, 0, sizeof (FileListInfo));
+
+    info.update_info.info_init = update_filelist_info_init;
+    info.update_info.info_clean = update_filelist_info_clean;
+    info.update_info.create_tables = yum_db_create_filelist_tables;
+    info.update_info.write_package = write_filelist_package_to_db;
+    info.update_info.xml_parse = yum_xml_parse_filelists;
+
+    return py_update (self, args, (UpdateInfo *) &info);
 }
 
 static PyObject *
 py_update_other (PyObject *self, PyObject *args)
 {
-    return py_update (self, args, update_other);
+    UpdateOtherInfo info;
+    memset (&info, 0, sizeof (UpdateOtherInfo));
+
+    info.update_info.info_init = update_other_info_init;
+    info.update_info.info_clean = update_other_info_clean;
+    info.update_info.create_tables = yum_db_create_other_tables;
+    info.update_info.write_package = write_other_package_to_db;
+    info.update_info.xml_parse = yum_xml_parse_other;
+
+    return py_update (self, args, (UpdateInfo *) &info);
 }
 
 static PyMethodDef SqliteMethods[] = {
