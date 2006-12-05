@@ -12,7 +12,10 @@
 # along with this program; if not, write to the Free Software
 # Foundation, Inc., 59 Temple Place - Suite 330, Boston, MA 02111-1307, USA.
 
-import sqlite
+try:
+    import sqlite3 as sqlite
+except ImportError:
+    import sqlite
 import _sqlitecache
 
 class RepodataParserSqlite:
@@ -23,7 +26,10 @@ class RepodataParserSqlite:
     def open_database(self, filename):
         if not filename:
             return None
-        return sqlite.connect(filename)
+        con = sqlite.connect(filename)
+        if sqlite.version_info[0] > 1:
+            con.row_factory = sqlite.Row
+        return con
 
     def getPrimary(self, location, checksum):
         """Load primary.xml.gz from an sqlite cache and update it 
