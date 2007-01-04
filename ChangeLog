@@ -1,3 +1,9 @@
+2007-12-04 13:10 jbowes
+
+	* sqlitecache.c: Never use the default glib log handler. This way, when
+	-d0 is passed, we won't output to the glib log handler (since nothing
+	should be displayed at all).
+
 2006-11-22 20:23  jbowes
 
 	* sqlitecache.c: Use structs and function pointers to reduce code

@@ -470,6 +470,9 @@ log_cb (const gchar *log_domain,
     PyObject *args;
     PyObject *result;
 
+    if (!callback)
+        return;
+
     args = PyTuple_New (2);
 
     switch (log_level) {
@@ -513,17 +516,14 @@ py_update (PyObject *self, PyObject *args, UpdateInfo *update_info)
                         &repoid))
         return NULL;
 
-    if (log) {
-        GLogLevelFlags level = G_LOG_LEVEL_MESSAGE | G_LOG_LEVEL_WARNING |
-            G_LOG_LEVEL_CRITICAL | G_LOG_LEVEL_DEBUG;
-        log_id = g_log_set_handler (NULL, level, log_cb, log);
-    }
+    GLogLevelFlags level = G_LOG_LEVEL_MESSAGE | G_LOG_LEVEL_WARNING |
+        G_LOG_LEVEL_CRITICAL | G_LOG_LEVEL_DEBUG;
+    log_id = g_log_set_handler (NULL, level, log_cb, log);
 
     db_filename = update_packages (update_info, md_filename, checksum,
                                    progress, repoid, &err);
 
-    if (log_id)
-        g_log_remove_handler (NULL, log_id);
+    g_log_remove_handler (NULL, log_id);
 
     if (db_filename) {
         ret = PyString_FromString (db_filename);
