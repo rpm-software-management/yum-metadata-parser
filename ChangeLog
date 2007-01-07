@@ -1,18 +1,36 @@
-2007-12-04 13:10 jbowes
+2007-01-07 15:31  skvidal
 
-	* sqlitecache.c: Never use the default glib log handler. This way, when
-	-d0 is passed, we won't output to the glib log handler (since nothing
-	should be displayed at all).
+	* setup.py, yum-metadata-parser.spec: 
+	mark as 1.0.3
 
-2006-11-22 20:23  jbowes
+2007-01-04 13:20  jbowes
 
-	* sqlitecache.c: Use structs and function pointers to reduce code
-	duplication.
+	* ChangeLog, sqlitecache.c: 2007-12-04 13:10 jbowes
+	
+		* sqlitecache.c: Never use the default glib log handler.
+	This way, when
+		-d0 is passed, we won't output to the glib log handler
+	(since nothing
+		should be displayed at all).
 
-2006-11-22 20:20  jbowes
+2006-12-05 15:50  katzj
 
-	* sqlitecache.c, sqlitecachec.py: Display repoid while populating
-	the cache.
+	* sqlitecachec.py: support newer pysqlite as included in python 2.5
+
+2006-11-22 20:28  jbowes
+
+	* ChangeLog, sqlitecache.c: Use structs and function pointers to
+	reduce code duplication.
+
+2006-11-22 20:22  jbowes
+
+	* ChangeLog, sqlitecache.c, sqlitecachec.py: Display repoid while
+	populating the cache.
+
+2006-07-12 01:40  skvidal
+
+	* ChangeLog, setup.py, yum-metadata-parser.spec: 
+	version bump check in changelog
 
 2006-07-10 12:54  pnasrat
 
