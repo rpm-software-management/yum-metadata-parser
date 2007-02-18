@@ -520,9 +520,17 @@ yum_db_dependency_prepare (sqlite3 *db,
     sqlite3_stmt *handle = NULL;
     char *query;
 
+    const char *pre_name = "";
+    const char *pre_value = "";
+
+    if (!strcmp (table, "requires")) {
+        pre_name = ", pre";
+        pre_value = ", ?";
+    }
+
     query = g_strdup_printf
-        ("INSERT INTO %s (name, flags, epoch, version, release, pkgKey) "
-         "VALUES (?, ?, ?, ?, ?, ?)", table);
+        ("INSERT INTO %s (name, flags, epoch, version, release, pkgKey%s) "
+         "VALUES (?, ?, ?, ?, ?, ?%s)", table, pre_name, pre_value);
 
     rc = sqlite3_prepare (db, query, -1, &handle, NULL);
     g_free (query);
@@ -542,7 +550,8 @@ void
 yum_db_dependency_write (sqlite3 *db,
                          sqlite3_stmt *handle,
                          gint64 pkgKey,
-                         Dependency *dep)
+                         Dependency *dep,
+                         gboolean isRequirement)
 {
     int rc;
 
@@ -552,6 +561,13 @@ yum_db_dependency_write (sqlite3 *db,
     sqlite3_bind_text (handle, 4, dep->version, -1, SQLITE_STATIC);
     sqlite3_bind_text (handle, 5, dep->release, -1, SQLITE_STATIC);
     sqlite3_bind_int  (handle, 6, pkgKey);
+
+    if (isRequirement) {
+        if (dep->pre)
+            sqlite3_bind_text (handle, 7, "TRUE", -1, SQLITE_TRANSIENT);
+        else
+            sqlite3_bind_text (handle, 7, "FALSE", -1, SQLITE_TRANSIENT);
+    }
 
     rc = sqlite3_step (handle);
     sqlite3_reset (handle);

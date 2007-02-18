@@ -26,6 +26,7 @@ typedef struct {
     char *epoch;
     char *version;
     char *release;
+    gboolean pre;
 } Dependency;
 
 typedef struct {

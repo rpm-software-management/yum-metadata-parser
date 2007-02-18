@@ -55,7 +55,8 @@ sqlite3_stmt *yum_db_dependency_prepare     (sqlite3 *db,
 void          yum_db_dependency_write       (sqlite3 *db,
                                              sqlite3_stmt *handle,
                                              gint64 pkgKey,
-                                             Dependency *dep);
+                                             Dependency *dep,
+                                             gboolean isRequirement);
 
 sqlite3_stmt *yum_db_file_prepare           (sqlite3 *db, GError **err);
 void          yum_db_file_write             (sqlite3 *db,

@@ -247,6 +247,7 @@ primary_parser_dep_start (PrimarySAXContext *ctx,
     const char *tmp_release = NULL;
     const char *tmp_epoch = NULL;
     const char *tmp_flags = NULL;
+    gboolean tmp_pre = FALSE;
     Dependency *dep;
     int i;
     gboolean ignore = FALSE;
@@ -272,6 +273,8 @@ primary_parser_dep_start (PrimarySAXContext *ctx,
                 tmp_version = value;
             else if (!strcmp (attr, "rel"))
                 tmp_release = value;
+            else if (!strcmp (attr, "pre"))
+                tmp_pre = TRUE;
         }
 
         if (!ignore) {
@@ -287,6 +290,7 @@ primary_parser_dep_start (PrimarySAXContext *ctx,
                 dep->version = g_string_chunk_insert (chunk, tmp_version);
             if (tmp_release)
                 dep->release = g_string_chunk_insert (chunk, tmp_release);
+            dep->pre = tmp_pre;
 
             *ctx->current_dep_list = g_slist_prepend (*ctx->current_dep_list,
                                                       dep);

@@ -179,13 +179,27 @@ package_writer_info_init (UpdateInfo *update_info, sqlite3 *db, GError **err)
 }
 
 static void
-write_deps (sqlite3 *db, sqlite3_stmt *handle, gint64 pkgKey, GSList *deps)
+write_deps (sqlite3 *db, sqlite3_stmt *handle, gint64 pkgKey, 
+            GSList *deps)
 {
     GSList *iter;
 
     for (iter = deps; iter; iter = iter->next)
-        yum_db_dependency_write (db, handle, pkgKey, (Dependency *) iter->data);
+        yum_db_dependency_write (db, handle, pkgKey, (Dependency *) iter->data,
+                                 FALSE);
 }
+
+static void
+write_requirements (sqlite3 *db, sqlite3_stmt *handle, gint64 pkgKey,
+            GSList *deps)
+{
+    GSList *iter;
+
+    for (iter = deps; iter; iter = iter->next)
+        yum_db_dependency_write (db, handle, pkgKey, (Dependency *) iter->data,
+                                 TRUE);
+}
+
 
 static void
 write_files (sqlite3 *db, sqlite3_stmt *handle, Package *pkg)
@@ -204,8 +218,8 @@ write_package_to_db (UpdateInfo *update_info, Package *package)
 
     yum_db_package_write (update_info->db, info->pkg_handle, package);
 
-    write_deps (update_info->db, info->requires_handle,
-                package->pkgKey, package->requires);
+    write_requirements (update_info->db, info->requires_handle,
+                    package->pkgKey, package->requires);
     write_deps (update_info->db, info->provides_handle,
                 package->pkgKey, package->provides);
     write_deps (update_info->db, info->conflicts_handle,
