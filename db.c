@@ -393,20 +393,35 @@ yum_db_create_primary_tables (sqlite3 *db, GError **err)
     const char *deps[] = { "requires", "provides", "conflicts", "obsoletes", NULL };
     int i;
 
+    const char *indexsql = "CREATE INDEX IF NOT EXISTS pkg%s on %s (pkgKey)";
+
     for (i = 0; deps[i]; i++) {
         const char *prereq;
+        char *query;
+
         if (!strcmp(deps[i], "requires")) {
             prereq = ", pre BOOLEAN DEFAULT FALSE";
         } else
             prereq = "";
 
-        char *query = g_strdup_printf (sql, deps[i], prereq);
+        query = g_strdup_printf (sql, deps[i], prereq);
         rc = sqlite3_exec (db, query, NULL, NULL, NULL);
         g_free (query);
 
         if (rc != SQLITE_OK) {
             g_set_error (err, YUM_DB_ERROR, YUM_DB_ERROR,
                          "Can not create %s table: %s",
+                         deps[i], sqlite3_errmsg (db));
+            return;
+        }
+
+        query = g_strdup_printf(indexsql, deps[i], deps[i]);
+        rc = sqlite3_exec (db, query, NULL, NULL, NULL);
+        g_free (query);
+
+        if (rc != SQLITE_OK) {
+            g_set_error (err, YUM_DB_ERROR, YUM_DB_ERROR,
+                         "Can not create index on %s table: %s",
                          deps[i], sqlite3_errmsg (db));
             return;
         }
