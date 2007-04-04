@@ -1,3 +1,25 @@
+2007-04-04 00:07  skvidal
+
+	* setup.py, yum-metadata-parser.spec: 
+	mark as 1.0.4
+
+2007-04-03 10:02  jbowes
+
+	* db.c: Create a pkgKey index for provides, requires, conflicts,
+	and obsoletes.
+	
+	Originally suggested by Florian Festi on yum-devel.
+
+2007-02-17 22:38  jbowes
+
+	* db.c, db.h, package.h, sqlitecache.c, xml-parser.c: Apply patch
+	from Florian Festi to include Prereqs.
+
+2007-01-07 15:31  skvidal
+
+	* ChangeLog: 
+	check in changelog
+
 2007-01-07 15:31  skvidal
 
 	* setup.py, yum-metadata-parser.spec: 
