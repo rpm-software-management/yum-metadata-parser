@@ -105,6 +105,26 @@ primary_parser_toplevel_start (PrimarySAXContext *ctx,
 }
 
 static void
+parse_version_info(const char **attrs, Package *p)
+{
+    int i;
+    const char *attr;
+    const char *value;
+
+    for (i = 0; attrs && attrs[i]; i++) {
+        attr = attrs[i];
+        value = attrs[++i];
+
+        if (!strcmp (attr, "epoch"))
+            p->epoch = g_string_chunk_insert (p->chunk, value);
+        else if (!strcmp (attr, "ver"))
+            p->version = g_string_chunk_insert (p->chunk, value);
+        else if (!strcmp (attr, "rel"))
+            p->release = g_string_chunk_insert (p->chunk, value);
+    }
+}
+
+static void
 primary_parser_package_start (PrimarySAXContext *ctx,
                               const char *name,
                               const char **attrs)
@@ -123,17 +143,7 @@ primary_parser_package_start (PrimarySAXContext *ctx,
     }
 
     else if (!strcmp (name, "version")) {
-        for (i = 0; attrs && attrs[i]; i++) {
-            attr = attrs[i];
-            value = attrs[++i];
-
-            if (!strcmp (attr, "epoch"))
-                p->epoch = g_string_chunk_insert (p->chunk, value);
-            else if (!strcmp (attr, "ver"))
-                p->version = g_string_chunk_insert (p->chunk, value);
-            else if (!strcmp (attr, "rel"))
-                p->release = g_string_chunk_insert (p->chunk, value);
-        }
+        parse_version_info(attrs, p);
     }
 
     else if (!strcmp (name, "checksum")) {
@@ -556,6 +566,26 @@ yum_xml_parse_primary (const char *filename,
 /*****************************************************************************/
 
 
+static void
+parse_package (const char **attrs, Package *p)
+{
+    int i;
+    const char *attr;
+    const char *value;
+
+    for (i = 0; attrs && attrs[i]; i++) {
+        attr = attrs[i];
+        value = attrs[++i];
+
+        if (!strcmp (attr, "pkgid"))
+            p->pkgId = g_string_chunk_insert (p->chunk, value);
+        if (!strcmp (attr, "name"))
+            p->name = g_string_chunk_insert (p->chunk, value);
+        else if (!strcmp (attr, "arch"))
+            p->arch = g_string_chunk_insert (p->chunk, value);
+    }
+}
+
 typedef enum {
     FILELIST_PARSER_TOPLEVEL = 0,
     FILELIST_PARSER_PACKAGE,
@@ -582,28 +612,12 @@ filelist_parser_toplevel_start (FilelistSAXContext *ctx,
                                 const char **attrs)
 {
     if (!strcmp (name, "package")) {
-        Package *p;
-        int i;
-        const char *attr;
-        const char *value;
-
         g_assert (ctx->current_package == NULL);
 
         ctx->state = FILELIST_PARSER_PACKAGE;
 
-        ctx->current_package = p = package_new ();
-
-        for (i = 0; attrs && attrs[i]; i++) {
-            attr = attrs[i];
-            value = attrs[++i];
-
-            if (!strcmp (attr, "pkgid"))
-                p->pkgId = g_string_chunk_insert (p->chunk, value);
-            if (!strcmp (attr, "name"))
-                p->name = g_string_chunk_insert (p->chunk, value);
-            else if (!strcmp (attr, "arch"))
-                p->arch = g_string_chunk_insert (p->chunk, value);
-        }
+        ctx->current_package = package_new ();
+        parse_package (attrs, ctx->current_package);
     }
 
     else if (ctx->count_fn && !strcmp (name, "filelists")) {
@@ -639,17 +653,7 @@ filelist_parser_package_start (FilelistSAXContext *ctx,
     ctx->want_text = TRUE;
 
     if (!strcmp (name, "version")) {
-        for (i = 0; attrs && attrs[i]; i++) {
-            attr = attrs[i];
-            value = attrs[++i];
-
-            if (!strcmp (attr, "epoch"))
-                p->epoch = g_string_chunk_insert (p->chunk, value);
-            else if (!strcmp (attr, "ver"))
-                p->version = g_string_chunk_insert (p->chunk, value);
-            else if (!strcmp (attr, "rel"))
-                p->release = g_string_chunk_insert (p->chunk, value);
-        }
+        parse_version_info(attrs, p);
     }
 
     else if (!strcmp (name, "file")) {
@@ -869,28 +873,12 @@ other_parser_toplevel_start (OtherSAXContext *ctx,
                              const char **attrs)
 {
     if (!strcmp (name, "package")) {
-        Package *p;
-        int i;
-        const char *attr;
-        const char *value;
-
         g_assert (ctx->current_package == NULL);
 
         ctx->state = OTHER_PARSER_PACKAGE;
 
-        ctx->current_package = p = package_new ();
-
-        for (i = 0; attrs && attrs[i]; i++) {
-            attr = attrs[i];
-            value = attrs[++i];
-
-            if (!strcmp (attr, "pkgid"))
-                p->pkgId = g_string_chunk_insert (p->chunk, value);
-            if (!strcmp (attr, "name"))
-                p->name = g_string_chunk_insert (p->chunk, value);
-            else if (!strcmp (attr, "arch"))
-                p->arch = g_string_chunk_insert (p->chunk, value);
-        }
+        ctx->current_package = package_new ();
+        parse_package (attrs, ctx->current_package);
     }
 
     else if (ctx->count_fn && !strcmp (name, "otherdata")) {
@@ -926,17 +914,7 @@ other_parser_package_start (OtherSAXContext *ctx,
     ctx->want_text = TRUE;
 
     if (!strcmp (name, "version")) {
-        for (i = 0; attrs && attrs[i]; i++) {
-            attr = attrs[i];
-            value = attrs[++i];
-
-            if (!strcmp (attr, "epoch"))
-                p->epoch = g_string_chunk_insert (p->chunk, value);
-            else if (!strcmp (attr, "ver"))
-                p->version = g_string_chunk_insert (p->chunk, value);
-            else if (!strcmp (attr, "rel"))
-                p->release = g_string_chunk_insert (p->chunk, value);
-        }
+        parse_version_info(attrs, p);
     }
 
     else if (!strcmp (name, "changelog")) {
