@@ -22,7 +22,7 @@
 #include <sqlite3.h>
 #include "package.h"
 
-#define YUM_SQLITE_CACHE_DBVERSION 9
+#define YUM_SQLITE_CACHE_DBVERSION 10
 
 #define YUM_DB_ERROR yum_db_error_quark()
 GQuark yum_db_error_quark (void);

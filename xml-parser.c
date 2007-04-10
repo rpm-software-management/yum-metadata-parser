@@ -162,9 +162,9 @@ primary_parser_package_start (PrimarySAXContext *ctx,
             value = attrs[++i];
 
             if (!strcmp (attr, "file"))
-                p->time_file = g_string_chunk_insert (p->chunk, value);
+                p->time_file = strtol(value, NULL, 10);
             else if (!strcmp (attr, "build"))
-                p->time_build = g_string_chunk_insert (p->chunk, value);
+                p->time_build = strtol(value, NULL, 10);
         }
     }
 
@@ -174,11 +174,11 @@ primary_parser_package_start (PrimarySAXContext *ctx,
             value = attrs[++i];
 
             if (!strcmp (attr, "package"))
-                p->size_package = g_string_chunk_insert (p->chunk, value);
+                p->size_package = strtol(value, NULL, 10);
             else if (!strcmp (attr, "installed"))
-                p->size_installed = g_string_chunk_insert (p->chunk, value);
+                p->size_installed = strtol(value, NULL, 10);
             else if (!strcmp (attr, "archive"))
-                p->size_archive = g_string_chunk_insert (p->chunk, value);
+                p->size_archive = strtol(value, NULL, 10);
         }
     }
 
@@ -213,9 +213,9 @@ primary_parser_format_start (PrimarySAXContext *ctx,
             value = attrs[++i];
 
             if (!strcmp (attr, "start"))
-                p->rpm_header_start = g_string_chunk_insert (p->chunk, value);
+                p->rpm_header_start = strtol(value, NULL, 10);
             else if (!strcmp (attr, "end"))
-                p->rpm_header_end = g_string_chunk_insert (p->chunk, value);
+                p->rpm_header_end = strtol(value, NULL, 10);
         }
     }
 
@@ -366,10 +366,9 @@ primary_parser_package_end (PrimarySAXContext *ctx, const char *name)
                                              ctx->text_buffer->str,
                                              ctx->text_buffer->len);
     else if (!strcmp (name, "checksum"))
-        p->checksum_value = p->pkgId =
-            g_string_chunk_insert_len (p->chunk,
-                                       ctx->text_buffer->str,
-                                       ctx->text_buffer->len);
+        p->pkgId = g_string_chunk_insert_len (p->chunk,
+                                              ctx->text_buffer->str,
+                                              ctx->text_buffer->len);
     else if (!strcmp (name, "summary"))
         p->summary = g_string_chunk_insert_len (p->chunk,
                                                 ctx->text_buffer->str,
@@ -928,8 +927,7 @@ other_parser_package_start (OtherSAXContext *ctx,
                 ctx->current_entry->author =
                     g_string_chunk_insert_const (p->chunk, value);
             else if (!strcmp (attr, "date"))
-                ctx->current_entry->date =
-                    g_string_chunk_insert_const (p->chunk, value);
+                ctx->current_entry->date = strtol(value, NULL, 10);
         }
     }
 }

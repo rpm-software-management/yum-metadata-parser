@@ -163,7 +163,7 @@ yum_db_create_dbinfo_table (sqlite3 *db, GError **err)
     int rc;
     const char *sql;
 
-    sql = "CREATE TABLE db_info (dbversion TEXT, checksum TEXT)";
+    sql = "CREATE TABLE db_info (dbversion INTEGER, checksum TEXT)";
     rc = sqlite3_exec (db, sql, NULL, NULL, NULL);
     if (rc != SQLITE_OK) {
         g_set_error (err, YUM_DB_ERROR, YUM_DB_ERROR,
@@ -324,23 +324,22 @@ yum_db_create_primary_tables (sqlite3 *db, GError **err)
         "  summary TEXT,"
         "  description TEXT,"
         "  url TEXT,"
-        "  time_file TEXT,"
-        "  time_build TEXT,"
+        "  time_file INTEGER,"
+        "  time_build INTEGER,"
         "  rpm_license TEXT,"
         "  rpm_vendor TEXT,"
         "  rpm_group TEXT,"
         "  rpm_buildhost TEXT,"
         "  rpm_sourcerpm TEXT,"
-        "  rpm_header_start TEXT,"
-        "  rpm_header_end TEXT,"
+        "  rpm_header_start INTEGER,"
+        "  rpm_header_end INTEGER,"
         "  rpm_packager TEXT,"
-        "  size_package TEXT,"
-        "  size_installed TEXT,"
-        "  size_archive TEXT,"
+        "  size_package INTEGER,"
+        "  size_installed INTEGER,"
+        "  size_archive INTEGER,"
         "  location_href TEXT,"
         "  location_base TEXT,"
-        "  checksum_type TEXT,"
-        "  checksum_value TEXT)";
+        "  checksum_type TEXT)";
 
     rc = sqlite3_exec (db, sql, NULL, NULL, NULL);
     if (rc != SQLITE_OK) {
@@ -372,7 +371,7 @@ yum_db_create_primary_tables (sqlite3 *db, GError **err)
         "CREATE TABLE files ("
         "  name TEXT,"
         "  type TEXT,"
-        "  pkgKey TEXT)";
+        "  pkgKey INTEGER)";
     rc = sqlite3_exec (db, sql, NULL, NULL, NULL);
     if (rc != SQLITE_OK) {
         g_set_error (err, YUM_DB_ERROR, YUM_DB_ERROR,
@@ -388,7 +387,7 @@ yum_db_create_primary_tables (sqlite3 *db, GError **err)
         "  epoch TEXT,"
         "  version TEXT,"
         "  release TEXT,"
-        "  pkgKey TEXT %s)";
+        "  pkgKey INTEGER %s)";
 
     const char *deps[] = { "requires", "provides", "conflicts", "obsoletes", NULL };
     int i;
@@ -468,9 +467,9 @@ yum_db_package_prepare (sqlite3 *db, GError **err)
         "  url, time_file, time_build, rpm_license, rpm_vendor, rpm_group,"
         "  rpm_buildhost, rpm_sourcerpm, rpm_header_start, rpm_header_end,"
         "  rpm_packager, size_package, size_installed, size_archive,"
-        "  location_href, location_base, checksum_type, checksum_value) "
+        "  location_href, location_base, checksum_type) "
         "VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?,"
-        "  ?, ?, ?, ?, ?, ?, ?, ?)";
+        "  ?, ?, ?, ?, ?, ?, ?)";
 
     rc = sqlite3_prepare (db, query, -1, &handle, NULL);
     if (rc != SQLITE_OK) {
@@ -498,23 +497,22 @@ yum_db_package_write (sqlite3 *db, sqlite3_stmt *handle, Package *p)
     sqlite3_bind_text (handle, 7,  p->summary, -1, SQLITE_STATIC);
     sqlite3_bind_text (handle, 8,  p->description, -1, SQLITE_STATIC);
     sqlite3_bind_text (handle, 9,  p->url, -1, SQLITE_STATIC);
-    sqlite3_bind_text (handle, 10, p->time_file, -1, SQLITE_STATIC);
-    sqlite3_bind_text (handle, 11, p->time_build, -1, SQLITE_STATIC);
+    sqlite3_bind_int  (handle, 10, p->time_file);
+    sqlite3_bind_int  (handle, 11, p->time_build);
     sqlite3_bind_text (handle, 12, p->rpm_license, -1, SQLITE_STATIC);
     sqlite3_bind_text (handle, 13, p->rpm_vendor, -1, SQLITE_STATIC);
     sqlite3_bind_text (handle, 14, p->rpm_group, -1, SQLITE_STATIC);
     sqlite3_bind_text (handle, 15, p->rpm_buildhost, -1, SQLITE_STATIC);
     sqlite3_bind_text (handle, 16, p->rpm_sourcerpm, -1, SQLITE_STATIC);
-    sqlite3_bind_text (handle, 17, p->rpm_header_start, -1, SQLITE_STATIC);
-    sqlite3_bind_text (handle, 18, p->rpm_header_end, -1, SQLITE_STATIC);
+    sqlite3_bind_int  (handle, 17, p->rpm_header_start);
+    sqlite3_bind_int  (handle, 18, p->rpm_header_end);
     sqlite3_bind_text (handle, 19, p->rpm_packager, -1, SQLITE_STATIC);
-    sqlite3_bind_text (handle, 20, p->size_package, -1, SQLITE_STATIC);
-    sqlite3_bind_text (handle, 21, p->size_installed, -1, SQLITE_STATIC);
-    sqlite3_bind_text (handle, 22, p->size_archive, -1, SQLITE_STATIC);
+    sqlite3_bind_int  (handle, 20, p->size_package);
+    sqlite3_bind_int  (handle, 21, p->size_installed);
+    sqlite3_bind_int  (handle, 22, p->size_archive);
     sqlite3_bind_text (handle, 23, p->location_href, -1, SQLITE_STATIC);
     sqlite3_bind_text (handle, 24, p->location_base, -1, SQLITE_STATIC);
     sqlite3_bind_text (handle, 25, p->checksum_type, -1, SQLITE_STATIC);
-    sqlite3_bind_text (handle, 26, p->checksum_value, -1, SQLITE_STATIC);
 
     rc = sqlite3_step (handle);
     sqlite3_reset (handle);
@@ -822,7 +820,7 @@ yum_db_create_other_tables (sqlite3 *db, GError **err)
         "CREATE TABLE changelog ("
         "  pkgKey INTEGER,"
         "  author TEXT,"
-        "  date TEXT,"
+        "  date INTEGER,"
         "  changelog TEXT)";
     rc = sqlite3_exec (db, sql, NULL, NULL, NULL);
     if (rc != SQLITE_OK) {
@@ -900,7 +898,7 @@ yum_db_changelog_write (sqlite3 *db, sqlite3_stmt *handle, Package *p)
 
         sqlite3_bind_int  (handle, 1, p->pkgKey);
         sqlite3_bind_text (handle, 2, entry->author, -1, SQLITE_STATIC);
-        sqlite3_bind_text (handle, 3, entry->date, -1, SQLITE_STATIC);
+        sqlite3_bind_int  (handle, 3, entry->date);
         sqlite3_bind_text (handle, 4, entry->changelog, -1, SQLITE_STATIC);
 
         rc = sqlite3_step (handle);

@@ -36,7 +36,7 @@ typedef struct {
 
 typedef struct {
     char *author;
-    char *date;
+    gint64 date;
     char *changelog;
 } ChangelogEntry;
 
@@ -51,23 +51,22 @@ typedef struct {
     char *summary;
     char *description;
     char *url;
-    char *time_file;
-    char *time_build;
+    gint64 time_file;
+    gint64 time_build;
     char *rpm_license;
     char *rpm_vendor;
     char *rpm_group;
     char *rpm_buildhost;
     char *rpm_sourcerpm;
-    char *rpm_header_start;
-    char *rpm_header_end;
+    gint64 rpm_header_start;
+    gint64 rpm_header_end;
     char *rpm_packager;
-    char *size_package;
-    char *size_installed;
-    char *size_archive;
+    gint64 size_package;
+    gint64 size_installed;
+    gint64 size_archive;
     char *location_href;
     char *location_base;
     char *checksum_type;
-    char *checksum_value;
 
     GSList *requires;
     GSList *provides;
