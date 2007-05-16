@@ -1,3 +1,8 @@
+2007-05-16 09:24  pnasrat
+
+	* AUTHORS, ChangeLog, setup.py, yum-metadata-parser.spec: Bump to
+	  version 1.1.1 to allow multiple dbversions
+
 2007-05-16 09:15  pnasrat
 
 	* sqlitecache.c, sqlitecachec.py: Add DBVERSION attribute Jeremy
