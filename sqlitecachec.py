@@ -18,6 +18,8 @@ except ImportError:
     import sqlite
 import _sqlitecache
 
+DBVERSION = _sqlitecache.DBVERSION
+
 class RepodataParserSqlite:
     def __init__(self, storedir, repoid, callback=None):
         self.callback = callback

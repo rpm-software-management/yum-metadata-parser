@@ -609,5 +609,10 @@ static PyMethodDef SqliteMethods[] = {
 PyMODINIT_FUNC
 init_sqlitecache (void)
 {
-    Py_InitModule ("_sqlitecache", SqliteMethods);
+    PyObject * m, * d;
+
+    m = Py_InitModule ("_sqlitecache", SqliteMethods);
+
+    d = PyModule_GetDict(m);
+    PyDict_SetItemString(d, "DBVERSION", PyInt_FromLong(YUM_SQLITE_CACHE_DBVERSION));
 }
