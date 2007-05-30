@@ -769,7 +769,7 @@ filelist_sax_warning (void *data, const char *msg, ...)
 static void
 filelist_sax_error (void *data, const char *msg, ...)
 {
-    PrimarySAXContext *ctx = (PrimarySAXContext *) data;
+    FilelistSAXContext *ctx = (FilelistSAXContext *) data;
     va_list args;
     char *tmp;
 
@@ -1034,7 +1034,7 @@ other_sax_warning (void *data, const char *msg, ...)
 static void
 other_sax_error (void *data, const char *msg, ...)
 {
-    PrimarySAXContext *ctx = (PrimarySAXContext *) data;
+    OtherSAXContext *ctx = (OtherSAXContext *) data;
     va_list args;
     char *tmp;
 
