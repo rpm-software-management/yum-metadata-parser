@@ -866,18 +866,11 @@ typedef enum {
 } OtherSAXContextState;
 
 typedef struct {
-    xmlParserCtxt *xml_context;
+    SAXContext sctx;
+
     OtherSAXContextState state;
-    GError **error;
-    CountFn count_fn;
-    PackageFn package_fn;
-    gpointer user_data;
 
-    Package *current_package;
     ChangelogEntry *current_entry;
-
-    gboolean want_text;
-    GString *text_buffer;
 } OtherSAXContext;
 
 static void
@@ -885,16 +878,18 @@ other_parser_toplevel_start (OtherSAXContext *ctx,
                              const char *name,
                              const char **attrs)
 {
+    SAXContext *sctx = &ctx->sctx;
+
     if (!strcmp (name, "package")) {
-        g_assert (ctx->current_package == NULL);
+        g_assert (sctx->current_package == NULL);
 
         ctx->state = OTHER_PARSER_PACKAGE;
 
-        ctx->current_package = package_new ();
-        parse_package (attrs, ctx->current_package);
+        sctx->current_package = package_new ();
+        parse_package (attrs, sctx->current_package);
     }
 
-    else if (ctx->count_fn && !strcmp (name, "otherdata")) {
+    else if (sctx->count_fn && !strcmp (name, "otherdata")) {
         int i;
         const char *attr;
         const char *value;
@@ -904,8 +899,8 @@ other_parser_toplevel_start (OtherSAXContext *ctx,
             value = attrs[++i];
 
             if (!strcmp (attr, "packages")) {
-                ctx->count_fn (string_to_guint32_with_default (value, 0),
-                               ctx->user_data);
+                sctx->count_fn (string_to_guint32_with_default (value, 0),
+                                sctx->user_data);
                 break;
             }
         }
@@ -917,14 +912,16 @@ other_parser_package_start (OtherSAXContext *ctx,
                             const char *name,
                             const char **attrs)
 {
-    Package *p = ctx->current_package;
+    SAXContext *sctx = &ctx->sctx;
+
+    Package *p = sctx->current_package;
     int i;
     const char *attr;
     const char *value;
 
     g_assert (p != NULL);
 
-    ctx->want_text = TRUE;
+    sctx->want_text = TRUE;
 
     if (!strcmp (name, "version")) {
         parse_version_info(attrs, p);
@@ -950,9 +947,10 @@ static void
 other_sax_start_element (void *data, const char *name, const char **attrs)
 {
     OtherSAXContext *ctx = (OtherSAXContext *) data;
+    SAXContext *sctx = &ctx->sctx;
 
-    if (ctx->text_buffer->len)
-        g_string_truncate (ctx->text_buffer, 0);
+    if (sctx->text_buffer->len)
+        g_string_truncate (sctx->text_buffer, 0);
 
     switch (ctx->state) {
     case OTHER_PARSER_TOPLEVEL:
@@ -969,22 +967,24 @@ other_sax_start_element (void *data, const char *name, const char **attrs)
 static void
 other_parser_package_end (OtherSAXContext *ctx, const char *name)
 {
-    Package *p = ctx->current_package;
+    SAXContext *sctx = &ctx->sctx;
+
+    Package *p = sctx->current_package;
 
     g_assert (p != NULL);
 
-    ctx->want_text = FALSE;
+    sctx->want_text = FALSE;
 
     if (!strcmp (name, "package")) {
 
         if (p->changelogs)
             p->changelogs = g_slist_reverse (p->changelogs);
 
-        if (ctx->package_fn && !*ctx->error)
-            ctx->package_fn (p, ctx->user_data);
+        if (sctx->package_fn && !*sctx->error)
+            sctx->package_fn (p, sctx->user_data);
 
         package_free (p);
-        ctx->current_package = NULL;
+        sctx->current_package = NULL;
 
         if (ctx->current_entry) {
             g_free (ctx->current_entry);
@@ -997,8 +997,8 @@ other_parser_package_end (OtherSAXContext *ctx, const char *name)
     else if (!strcmp (name, "changelog")) {
         ctx->current_entry->changelog =
             g_string_chunk_insert_len (p->chunk,
-                                       ctx->text_buffer->str,
-                                       ctx->text_buffer->len);
+                                       sctx->text_buffer->str,
+                                       sctx->text_buffer->len);
 
         p->changelogs = g_slist_prepend (p->changelogs, ctx->current_entry);
         ctx->current_entry = NULL;
@@ -1009,6 +1009,7 @@ static void
 other_sax_end_element (void *data, const char *name)
 {
     OtherSAXContext *ctx = (OtherSAXContext *) data;
+    SAXContext *sctx = &ctx->sctx;
 
     switch (ctx->state) {
     case OTHER_PARSER_PACKAGE:
@@ -1018,29 +1019,31 @@ other_sax_end_element (void *data, const char *name)
         break;
     }
 
-    g_string_truncate (ctx->text_buffer, 0);
+    g_string_truncate (sctx->text_buffer, 0);
 }
 
 static void
 other_sax_characters (void *data, const char *ch, int len)
 {
     OtherSAXContext *ctx = (OtherSAXContext *) data;
+    SAXContext *sctx = &ctx->sctx;
 
-    if (ctx->want_text)
-        g_string_append_len (ctx->text_buffer, ch, len);
+    if (sctx->want_text)
+        g_string_append_len (sctx->text_buffer, ch, len);
 }
 
 static void
 other_sax_error (void *data, const char *msg, ...)
 {
     OtherSAXContext *ctx = (OtherSAXContext *) data;
+    SAXContext *sctx = &ctx->sctx;
     va_list args;
     char *tmp;
 
     va_start (args, msg);
 
     tmp = g_strdup_vprintf (msg, args);
-    g_set_error (ctx->error, YUM_PARSER_ERROR, YUM_PARSER_ERROR,
+    g_set_error (sctx->error, YUM_PARSER_ERROR, YUM_PARSER_ERROR,
                  "Parsing other.xml error: %s", tmp);
     g_free (tmp);
 
@@ -1082,28 +1085,30 @@ yum_xml_parse_other (const char *filename,
                      GError **err)
 {
     OtherSAXContext ctx;
+    SAXContext sctx = ctx.sctx;
+
     int rc;
 
     ctx.state = OTHER_PARSER_TOPLEVEL;
-    ctx.error = err;
-    ctx.count_fn = count_callback;
-    ctx.package_fn = package_callback;
-    ctx.user_data = user_data;
-    ctx.current_package = NULL;
+    sctx.error = err;
+    sctx.count_fn = count_callback;
+    sctx.package_fn = package_callback;
+    sctx.user_data = user_data;
+    sctx.current_package = NULL;
     ctx.current_entry = NULL;
-    ctx.want_text = FALSE;
-    ctx.text_buffer = g_string_sized_new (PACKAGE_FIELD_SIZE);
+    sctx.want_text = FALSE;
+    sctx.text_buffer = g_string_sized_new (PACKAGE_FIELD_SIZE);
 
     xmlSubstituteEntitiesDefault (1);
     rc = xmlSAXUserParseFile (&other_sax_handler, &ctx, filename);
 
-    if (ctx.current_package) {
+    if (sctx.current_package) {
         g_warning ("Incomplete package lost");
-        package_free (ctx.current_package);
+        package_free (sctx.current_package);
     }
 
     if (ctx.current_entry)
         g_free (ctx.current_entry);
 
-    g_string_free (ctx.text_buffer, TRUE);
+    g_string_free (sctx.text_buffer, TRUE);
 }
