@@ -472,7 +472,7 @@ primary_sax_characters (void *data, const char *ch, int len)
 }
 
 static void
-primary_sax_warning (void *data, const char *msg, ...)
+sax_warning (void *data, const char *msg, ...)
 {
     va_list args;
     char *tmp;
@@ -525,7 +525,7 @@ static xmlSAXHandler primary_sax_handler = {
     NULL,      /* ignorableWhitespace */
     NULL,      /* processingInstruction */
     NULL,      /* comment */
-    primary_sax_warning,      /* warning */
+    sax_warning,      /* warning */
     primary_sax_error,      /* error */
     primary_sax_error,      /* fatalError */
 };
@@ -752,21 +752,6 @@ filelist_sax_characters (void *data, const char *ch, int len)
 }
 
 static void
-filelist_sax_warning (void *data, const char *msg, ...)
-{
-    va_list args;
-    char *tmp;
-
-    va_start (args, msg);
-
-    tmp = g_strdup_vprintf (msg, args);
-    g_warning ("* SAX Warning: %s", tmp);
-    g_free (tmp);
-
-    va_end (args);
-}
-
-static void
 filelist_sax_error (void *data, const char *msg, ...)
 {
     FilelistSAXContext *ctx = (FilelistSAXContext *) data;
@@ -805,7 +790,7 @@ static xmlSAXHandler filelist_sax_handler = {
     NULL,      /* ignorableWhitespace */
     NULL,      /* processingInstruction */
     NULL,      /* comment */
-    filelist_sax_warning,      /* warning */
+    sax_warning,      /* warning */
     filelist_sax_error,      /* error */
     filelist_sax_error,      /* fatalError */
 };
@@ -1017,21 +1002,6 @@ other_sax_characters (void *data, const char *ch, int len)
 }
 
 static void
-other_sax_warning (void *data, const char *msg, ...)
-{
-    va_list args;
-    char *tmp;
-
-    va_start (args, msg);
-
-    tmp = g_strdup_vprintf (msg, args);
-    g_warning ("* SAX Warning: %s", tmp);
-    g_free (tmp);
-
-    va_end (args);
-}
-
-static void
 other_sax_error (void *data, const char *msg, ...)
 {
     OtherSAXContext *ctx = (OtherSAXContext *) data;
@@ -1070,7 +1040,7 @@ static xmlSAXHandler other_sax_handler = {
     NULL,      /* ignorableWhitespace */
     NULL,      /* processingInstruction */
     NULL,      /* comment */
-    other_sax_warning,      /* warning */
+    sax_warning,      /* warning */
     other_sax_error,      /* error */
     other_sax_error,      /* fatalError */
 };
