@@ -485,10 +485,9 @@ primary_sax_end_element (void *data, const char *name)
 }
 
 static void
-primary_sax_characters (void *data, const char *ch, int len)
+sax_characters (void *data, const char *ch, int len)
 {
-    PrimarySAXContext *ctx = (PrimarySAXContext *) data;
-    SAXContext *sctx = &ctx->sctx;
+    SAXContext *sctx = (SAXContext *) data;
 
     if (sctx->want_text)
         g_string_append_len (sctx->text_buffer, ch, len);
@@ -544,7 +543,7 @@ static xmlSAXHandler primary_sax_handler = {
     (startElementSAXFunc) primary_sax_start_element, /* startElement */
     (endElementSAXFunc) primary_sax_end_element,     /* endElement */
     NULL,      /* reference */
-    (charactersSAXFunc) primary_sax_characters,      /* characters */
+    (charactersSAXFunc) sax_characters,      /* characters */
     NULL,      /* ignorableWhitespace */
     NULL,      /* processingInstruction */
     NULL,      /* comment */
@@ -768,16 +767,6 @@ filelist_sax_end_element (void *data, const char *name)
 }
 
 static void
-filelist_sax_characters (void *data, const char *ch, int len)
-{
-    FilelistSAXContext *ctx = (FilelistSAXContext *) data;
-    SAXContext *sctx = &ctx->sctx;
-
-    if (sctx->want_text)
-        g_string_append_len (sctx->text_buffer, ch, len);
-}
-
-static void
 filelist_sax_error (void *data, const char *msg, ...)
 {
     FilelistSAXContext *ctx = (FilelistSAXContext *) data;
@@ -813,7 +802,7 @@ static xmlSAXHandler filelist_sax_handler = {
     (startElementSAXFunc) filelist_sax_start_element, /* startElement */
     (endElementSAXFunc) filelist_sax_end_element,     /* endElement */
     NULL,      /* reference */
-    (charactersSAXFunc) filelist_sax_characters,      /* characters */
+    (charactersSAXFunc) sax_characters,      /* characters */
     NULL,      /* ignorableWhitespace */
     NULL,      /* processingInstruction */
     NULL,      /* comment */
@@ -1023,16 +1012,6 @@ other_sax_end_element (void *data, const char *name)
 }
 
 static void
-other_sax_characters (void *data, const char *ch, int len)
-{
-    OtherSAXContext *ctx = (OtherSAXContext *) data;
-    SAXContext *sctx = &ctx->sctx;
-
-    if (sctx->want_text)
-        g_string_append_len (sctx->text_buffer, ch, len);
-}
-
-static void
 other_sax_error (void *data, const char *msg, ...)
 {
     OtherSAXContext *ctx = (OtherSAXContext *) data;
@@ -1068,7 +1047,7 @@ static xmlSAXHandler other_sax_handler = {
     (startElementSAXFunc) other_sax_start_element, /* startElement */
     (endElementSAXFunc) other_sax_end_element,     /* endElement */
     NULL,      /* reference */
-    (charactersSAXFunc) other_sax_characters,      /* characters */
+    (charactersSAXFunc) sax_characters,      /* characters */
     NULL,      /* ignorableWhitespace */
     NULL,      /* processingInstruction */
     NULL,      /* comment */
