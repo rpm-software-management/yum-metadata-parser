@@ -51,6 +51,7 @@ string_to_guint32_with_default (const char *n, guint32 def)
 }
 
 typedef struct {
+    const char *md_type;
     xmlParserCtxt *xml_context;
     GError **error;
     CountFn count_fn;
@@ -509,7 +510,7 @@ sax_warning (void *data, const char *msg, ...)
 }
 
 static void
-primary_sax_error (void *data, const char *msg, ...)
+sax_error (void *data, const char *msg, ...)
 {
     SAXContext *sctx = (SAXContext *) data;
     va_list args;
@@ -519,7 +520,7 @@ primary_sax_error (void *data, const char *msg, ...)
 
     tmp = g_strdup_vprintf (msg, args);
     g_set_error (sctx->error, YUM_PARSER_ERROR, YUM_PARSER_ERROR,
-                 "Parsing primary.xml error: %s", tmp);
+                 "Parsing %s error: %s", sctx->md_type, tmp);
     g_free (tmp);
 
     va_end (args);
@@ -548,8 +549,8 @@ static xmlSAXHandler primary_sax_handler = {
     NULL,      /* processingInstruction */
     NULL,      /* comment */
     sax_warning,      /* warning */
-    primary_sax_error,      /* error */
-    primary_sax_error,      /* fatalError */
+    sax_error,      /* error */
+    sax_error,      /* fatalError */
 };
 
 void
@@ -563,6 +564,7 @@ yum_xml_parse_primary (const char *filename,
     SAXContext sctx = ctx.sctx;
     int rc;
 
+    sctx.md_type = "primary.xml";
     ctx.state = PRIMARY_PARSER_TOPLEVEL;
     sctx.error = err;
     sctx.count_fn = count_callback;
@@ -766,24 +768,6 @@ filelist_sax_end_element (void *data, const char *name)
     g_string_truncate (sctx->text_buffer, 0);
 }
 
-static void
-filelist_sax_error (void *data, const char *msg, ...)
-{
-    FilelistSAXContext *ctx = (FilelistSAXContext *) data;
-    SAXContext *sctx = &ctx->sctx;
-    va_list args;
-    char *tmp;
-
-    va_start (args, msg);
-
-    tmp = g_strdup_vprintf (msg, args);
-    g_set_error (sctx->error, YUM_PARSER_ERROR, YUM_PARSER_ERROR,
-                 "Parsing filelists.xml error: %s", tmp);
-    g_free (tmp);
-
-    va_end (args);
-}
-
 static xmlSAXHandler filelist_sax_handler = {
     NULL,      /* internalSubset */
     NULL,      /* isStandalone */
@@ -807,8 +791,8 @@ static xmlSAXHandler filelist_sax_handler = {
     NULL,      /* processingInstruction */
     NULL,      /* comment */
     sax_warning,      /* warning */
-    filelist_sax_error,      /* error */
-    filelist_sax_error,      /* fatalError */
+    sax_error,      /* error */
+    sax_error,      /* fatalError */
 };
 
 void
@@ -823,6 +807,7 @@ yum_xml_parse_filelists (const char *filename,
 
     int rc;
 
+    sctx.md_type = "filelists.xml";
     ctx.state = FILELIST_PARSER_TOPLEVEL;
     sctx.error = err;
     sctx.count_fn = count_callback;
@@ -1011,24 +996,6 @@ other_sax_end_element (void *data, const char *name)
     g_string_truncate (sctx->text_buffer, 0);
 }
 
-static void
-other_sax_error (void *data, const char *msg, ...)
-{
-    OtherSAXContext *ctx = (OtherSAXContext *) data;
-    SAXContext *sctx = &ctx->sctx;
-    va_list args;
-    char *tmp;
-
-    va_start (args, msg);
-
-    tmp = g_strdup_vprintf (msg, args);
-    g_set_error (sctx->error, YUM_PARSER_ERROR, YUM_PARSER_ERROR,
-                 "Parsing other.xml error: %s", tmp);
-    g_free (tmp);
-
-    va_end (args);
-}
-
 static xmlSAXHandler other_sax_handler = {
     NULL,      /* internalSubset */
     NULL,      /* isStandalone */
@@ -1052,8 +1019,8 @@ static xmlSAXHandler other_sax_handler = {
     NULL,      /* processingInstruction */
     NULL,      /* comment */
     sax_warning,      /* warning */
-    other_sax_error,      /* error */
-    other_sax_error,      /* fatalError */
+    sax_error,      /* error */
+    sax_error,      /* fatalError */
 };
 
 void
@@ -1068,6 +1035,7 @@ yum_xml_parse_other (const char *filename,
 
     int rc;
 
+    sctx.md_type = "other.xml";
     ctx.state = OTHER_PARSER_TOPLEVEL;
     sctx.error = err;
     sctx.count_fn = count_callback;
