@@ -554,6 +554,24 @@ static xmlSAXHandler primary_sax_handler = {
 };
 
 void
+sax_context_init (SAXContext *sctx,
+                  const char *md_type,
+                  CountFn count_callback,
+                  PackageFn package_callback,
+                  gpointer user_data,
+                  GError **err)
+{
+    sctx->md_type = md_type;
+    sctx->error = err;
+    sctx->count_fn = count_callback;
+    sctx->package_fn = package_callback;
+    sctx->user_data = user_data;
+    sctx->current_package = NULL;
+    sctx->want_text = FALSE;
+    sctx->text_buffer = g_string_sized_new (PACKAGE_FIELD_SIZE);
+}
+
+void
 yum_xml_parse_primary (const char *filename,
                        CountFn count_callback,
                        PackageFn package_callback,
@@ -561,30 +579,25 @@ yum_xml_parse_primary (const char *filename,
                        GError **err)
 {
     PrimarySAXContext ctx;
-    SAXContext sctx = ctx.sctx;
+    SAXContext *sctx = &ctx.sctx;
     int rc;
 
-    sctx.md_type = "primary.xml";
     ctx.state = PRIMARY_PARSER_TOPLEVEL;
-    sctx.error = err;
-    sctx.count_fn = count_callback;
-    sctx.package_fn = package_callback;
-    sctx.user_data = user_data;
-    sctx.current_package = NULL;
     ctx.current_dep_list = NULL;
     ctx.current_file = NULL;
-    sctx.want_text = FALSE;
-    sctx.text_buffer = g_string_sized_new (PACKAGE_FIELD_SIZE);
+
+    sax_context_init(sctx, "primary.xml", count_callback, package_callback,
+                     user_data, err);
 
     xmlSubstituteEntitiesDefault (1);
     rc = xmlSAXUserParseFile (&primary_sax_handler, &ctx, filename);
 
-    if (sctx.current_package) {
+    if (sctx->current_package) {
         g_warning ("Incomplete package lost");
-        package_free (sctx.current_package);
+        package_free (sctx->current_package);
     }
 
-    g_string_free (sctx.text_buffer, TRUE);
+    g_string_free (sctx->text_buffer, TRUE);
 }
 
 /*****************************************************************************/
@@ -803,33 +816,28 @@ yum_xml_parse_filelists (const char *filename,
                          GError **err)
 {
     FilelistSAXContext ctx;
-    SAXContext sctx = ctx.sctx;
+    SAXContext *sctx = &ctx.sctx;
 
     int rc;
 
-    sctx.md_type = "filelists.xml";
     ctx.state = FILELIST_PARSER_TOPLEVEL;
-    sctx.error = err;
-    sctx.count_fn = count_callback;
-    sctx.package_fn = package_callback;
-    sctx.user_data = user_data;
-    sctx.current_package = NULL;
     ctx.current_file = NULL;
-    sctx.want_text = FALSE;
-    sctx.text_buffer = g_string_sized_new (PACKAGE_FIELD_SIZE);
+    
+    sax_context_init(sctx, "filelists.xml", count_callback, package_callback,
+                     user_data, err);
 
     xmlSubstituteEntitiesDefault (1);
     rc = xmlSAXUserParseFile (&filelist_sax_handler, &ctx, filename);
 
-    if (sctx.current_package) {
+    if (sctx->current_package) {
         g_warning ("Incomplete package lost");
-        package_free (sctx.current_package);
+        package_free (sctx->current_package);
     }
 
     if (ctx.current_file)
         g_free (ctx.current_file);
 
-    g_string_free (sctx.text_buffer, TRUE);
+    g_string_free (sctx->text_buffer, TRUE);
 }
 
 /*****************************************************************************/
@@ -1031,31 +1039,26 @@ yum_xml_parse_other (const char *filename,
                      GError **err)
 {
     OtherSAXContext ctx;
-    SAXContext sctx = ctx.sctx;
+    SAXContext *sctx = &ctx.sctx;
 
     int rc;
 
-    sctx.md_type = "other.xml";
     ctx.state = OTHER_PARSER_TOPLEVEL;
-    sctx.error = err;
-    sctx.count_fn = count_callback;
-    sctx.package_fn = package_callback;
-    sctx.user_data = user_data;
-    sctx.current_package = NULL;
     ctx.current_entry = NULL;
-    sctx.want_text = FALSE;
-    sctx.text_buffer = g_string_sized_new (PACKAGE_FIELD_SIZE);
+    
+    sax_context_init(sctx, "other.xml", count_callback, package_callback,
+                     user_data, err);
 
     xmlSubstituteEntitiesDefault (1);
     rc = xmlSAXUserParseFile (&other_sax_handler, &ctx, filename);
 
-    if (sctx.current_package) {
+    if (sctx->current_package) {
         g_warning ("Incomplete package lost");
-        package_free (sctx.current_package);
+        package_free (sctx->current_package);
     }
 
     if (ctx.current_entry)
         g_free (ctx.current_entry);
 
-    g_string_free (sctx.text_buffer, TRUE);
+    g_string_free (sctx->text_buffer, TRUE);
 }
