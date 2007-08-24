@@ -380,6 +380,15 @@ yum_db_create_primary_tables (sqlite3 *db, GError **err)
         return;
     }
 
+    sql = "CREATE INDEX filenames ON files (name)";
+    rc = sqlite3_exec (db, sql, NULL, NULL, NULL);
+    if (rc != SQLITE_OK) {
+        g_set_error (err, YUM_DB_ERROR, YUM_DB_ERROR,
+                     "Can not create filenames index: %s",
+                     sqlite3_errmsg (db));
+        return;
+    }
+
     sql =
         "CREATE TABLE %s ("
         "  name TEXT,"
@@ -392,7 +401,8 @@ yum_db_create_primary_tables (sqlite3 *db, GError **err)
     const char *deps[] = { "requires", "provides", "conflicts", "obsoletes", NULL };
     int i;
 
-    const char *indexsql = "CREATE INDEX IF NOT EXISTS pkg%s on %s (pkgKey)";
+    const char *pkgindexsql = "CREATE INDEX pkg%s on %s (pkgKey)";
+    const char *nameindexsql = "CREATE INDEX %sname ON %s (name)";
 
     for (i = 0; deps[i]; i++) {
         const char *prereq;
@@ -414,7 +424,7 @@ yum_db_create_primary_tables (sqlite3 *db, GError **err)
             return;
         }
 
-        query = g_strdup_printf(indexsql, deps[i], deps[i]);
+        query = g_strdup_printf(pkgindexsql, deps[i], deps[i]);
         rc = sqlite3_exec (db, query, NULL, NULL, NULL);
         g_free (query);
 
@@ -424,15 +434,18 @@ yum_db_create_primary_tables (sqlite3 *db, GError **err)
                          deps[i], sqlite3_errmsg (db));
             return;
         }
-    }
 
-    sql = "CREATE INDEX providesname ON provides (name)";
-    rc = sqlite3_exec (db, sql, NULL, NULL, NULL);
-    if (rc != SQLITE_OK) {
-        g_set_error (err, YUM_DB_ERROR, YUM_DB_ERROR,
-                     "Can not create providesname index: %s",
-                     sqlite3_errmsg (db));
-        return;
+        if (i < 2) {
+            query = g_strdup_printf(nameindexsql, deps[i], deps[i]);
+            rc = sqlite3_exec (db, query, NULL, NULL, NULL);
+            if (rc != SQLITE_OK) {
+                g_set_error (err, YUM_DB_ERROR, YUM_DB_ERROR,
+                             "Can not create %sname index: %s",
+                             deps[i], sqlite3_errmsg (db));
+                return;
+            }
+        }
+
     }
 
     sql =
@@ -678,6 +691,15 @@ yum_db_create_filelist_tables (sqlite3 *db, GError **err)
     if (rc != SQLITE_OK) {
         g_set_error (err, YUM_DB_ERROR, YUM_DB_ERROR,
                      "Can not create pkgId index: %s",
+                     sqlite3_errmsg (db));
+        return;
+    }
+
+    sql = "CREATE INDEX dirnames ON filelist (dirname)";
+    rc = sqlite3_exec (db, sql, NULL, NULL, NULL);
+    if (rc != SQLITE_OK) {
+        g_set_error (err, YUM_DB_ERROR, YUM_DB_ERROR,
+                     "Can not create dirnames index: %s",
                      sqlite3_errmsg (db));
         return;
     }
