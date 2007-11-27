@@ -358,6 +358,11 @@ update_package_cb (Package *p, gpointer user_data)
 {
     UpdateInfo *update_info = (UpdateInfo *) user_data;
 
+    /* TODO: Wire in logging of skipped packages */
+    if (p->pkgId == NULL) {
+        return;
+    }
+
     g_hash_table_insert (update_info->all_packages,
                          g_string_chunk_insert (update_info->package_ids_chunk,
                                                 p->pkgId),
