@@ -31,6 +31,9 @@ class RepodataParserSqlite:
         con = sqlite.connect(filename)
         if sqlite.version_info[0] > 1:
             con.row_factory = sqlite.Row
+        cur = con.cursor()
+        cur.execute("pragma locking_mode = EXCLUSIVE")
+        del cur
         return con
 
     def getPrimary(self, location, checksum):
