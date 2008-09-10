@@ -69,7 +69,7 @@ update_info_init (UpdateInfo *info, GError **err)
     rc = sqlite3_prepare (info->db, sql, -1, &info->remove_handle, NULL);
     if (rc != SQLITE_OK) {
         g_set_error (err, YUM_DB_ERROR, YUM_DB_ERROR,
-                     "Can not prepare changelog insertion: %s",
+                     "Can not prepare package removal: %s",
                      sqlite3_errmsg (info->db));
         sqlite3_finalize (info->remove_handle);
         return;
