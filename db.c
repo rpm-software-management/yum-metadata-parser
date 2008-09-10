@@ -349,24 +349,6 @@ yum_db_create_primary_tables (sqlite3 *db, GError **err)
         return;
     }
 
-    sql = "CREATE INDEX packagename ON packages (name)";
-    rc = sqlite3_exec (db, sql, NULL, NULL, NULL);
-    if (rc != SQLITE_OK) {
-        g_set_error (err, YUM_DB_ERROR, YUM_DB_ERROR,
-                     "Can not create packagename index: %s",
-                     sqlite3_errmsg (db));
-        return;
-    }
-    
-    sql = "CREATE INDEX packageId ON packages (pkgId)";
-    rc = sqlite3_exec (db, sql, NULL, NULL, NULL);
-    if (rc != SQLITE_OK) {
-        g_set_error (err, YUM_DB_ERROR, YUM_DB_ERROR,
-                     "Can not create packageId index: %s",
-                     sqlite3_errmsg (db));
-        return;
-    }
-
     sql =
         "CREATE TABLE files ("
         "  name TEXT,"
@@ -376,15 +358,6 @@ yum_db_create_primary_tables (sqlite3 *db, GError **err)
     if (rc != SQLITE_OK) {
         g_set_error (err, YUM_DB_ERROR, YUM_DB_ERROR,
                      "Can not create files table: %s",
-                     sqlite3_errmsg (db));
-        return;
-    }
-
-    sql = "CREATE INDEX filenames ON files (name)";
-    rc = sqlite3_exec (db, sql, NULL, NULL, NULL);
-    if (rc != SQLITE_OK) {
-        g_set_error (err, YUM_DB_ERROR, YUM_DB_ERROR,
-                     "Can not create filenames index: %s",
                      sqlite3_errmsg (db));
         return;
     }
@@ -400,9 +373,6 @@ yum_db_create_primary_tables (sqlite3 *db, GError **err)
 
     const char *deps[] = { "requires", "provides", "conflicts", "obsoletes", NULL };
     int i;
-
-    const char *pkgindexsql = "CREATE INDEX pkg%s on %s (pkgKey)";
-    const char *nameindexsql = "CREATE INDEX %sname ON %s (name)";
 
     for (i = 0; deps[i]; i++) {
         const char *prereq;
@@ -423,6 +393,68 @@ yum_db_create_primary_tables (sqlite3 *db, GError **err)
                          deps[i], sqlite3_errmsg (db));
             return;
         }
+    }
+
+    sql =
+        "CREATE TRIGGER removals AFTER DELETE ON packages"
+        "  BEGIN"
+        "    DELETE FROM files WHERE pkgKey = old.pkgKey;"
+        "    DELETE FROM requires WHERE pkgKey = old.pkgKey;"
+        "    DELETE FROM provides WHERE pkgKey = old.pkgKey;"
+        "    DELETE FROM conflicts WHERE pkgKey = old.pkgKey;"
+        "    DELETE FROM obsoletes WHERE pkgKey = old.pkgKey;"
+        "  END;";
+
+    rc = sqlite3_exec (db, sql, NULL, NULL, NULL);
+    if (rc != SQLITE_OK) {
+        g_set_error (err, YUM_DB_ERROR, YUM_DB_ERROR,
+                     "Can not create removals trigger: %s",
+                     sqlite3_errmsg (db));
+        return;
+    }
+}
+
+void
+yum_db_index_primary_tables (sqlite3 *db, GError **err)
+{
+    int rc;
+    const char *sql;
+
+    sql = "CREATE INDEX IF NOT EXISTS packagename ON packages (name)";
+    rc = sqlite3_exec (db, sql, NULL, NULL, NULL);
+    if (rc != SQLITE_OK) {
+        g_set_error (err, YUM_DB_ERROR, YUM_DB_ERROR,
+                     "Can not create packagename index: %s",
+                     sqlite3_errmsg (db));
+        return;
+    }
+    
+    sql = "CREATE INDEX IF NOT EXISTS packageId ON packages (pkgId)";
+    rc = sqlite3_exec (db, sql, NULL, NULL, NULL);
+    if (rc != SQLITE_OK) {
+        g_set_error (err, YUM_DB_ERROR, YUM_DB_ERROR,
+                     "Can not create packageId index: %s",
+                     sqlite3_errmsg (db));
+        return;
+    }
+
+    sql = "CREATE INDEX IF NOT EXISTS filenames ON files (name)";
+    rc = sqlite3_exec (db, sql, NULL, NULL, NULL);
+    if (rc != SQLITE_OK) {
+        g_set_error (err, YUM_DB_ERROR, YUM_DB_ERROR,
+                     "Can not create filenames index: %s",
+                     sqlite3_errmsg (db));
+        return;
+    }
+
+    const char *deps[] = { "requires", "provides", "conflicts", "obsoletes", NULL };
+    int i;
+
+    const char *pkgindexsql = "CREATE INDEX IF NOT EXISTS pkg%s on %s (pkgKey)";
+    const char *nameindexsql = "CREATE INDEX IF NOT EXISTS %sname ON %s (name)";
+
+    for (i = 0; deps[i]; i++) {
+        char *query;
 
         query = g_strdup_printf(pkgindexsql, deps[i], deps[i]);
         rc = sqlite3_exec (db, query, NULL, NULL, NULL);
@@ -445,25 +477,6 @@ yum_db_create_primary_tables (sqlite3 *db, GError **err)
                 return;
             }
         }
-
-    }
-
-    sql =
-        "CREATE TRIGGER removals AFTER DELETE ON packages"
-        "  BEGIN"
-        "    DELETE FROM files WHERE pkgKey = old.pkgKey;"
-        "    DELETE FROM requires WHERE pkgKey = old.pkgKey;"
-        "    DELETE FROM provides WHERE pkgKey = old.pkgKey;"
-        "    DELETE FROM conflicts WHERE pkgKey = old.pkgKey;"
-        "    DELETE FROM obsoletes WHERE pkgKey = old.pkgKey;"
-        "  END;";
-
-    rc = sqlite3_exec (db, sql, NULL, NULL, NULL);
-    if (rc != SQLITE_OK) {
-        g_set_error (err, YUM_DB_ERROR, YUM_DB_ERROR,
-                     "Can not create removals trigger: %s",
-                     sqlite3_errmsg (db));
-        return;
     }
 }
 
@@ -677,33 +690,6 @@ yum_db_create_filelist_tables (sqlite3 *db, GError **err)
         return;
     }
 
-    sql = "CREATE INDEX keyfile ON filelist (pkgKey)";
-    rc = sqlite3_exec (db, sql, NULL, NULL, NULL);
-    if (rc != SQLITE_OK) {
-        g_set_error (err, YUM_DB_ERROR, YUM_DB_ERROR,
-                     "Can not create keyfile index: %s",
-                     sqlite3_errmsg (db));
-        return;
-    }
-
-    sql = "CREATE INDEX pkgId ON packages (pkgId)";
-    rc = sqlite3_exec (db, sql, NULL, NULL, NULL);
-    if (rc != SQLITE_OK) {
-        g_set_error (err, YUM_DB_ERROR, YUM_DB_ERROR,
-                     "Can not create pkgId index: %s",
-                     sqlite3_errmsg (db));
-        return;
-    }
-
-    sql = "CREATE INDEX dirnames ON filelist (dirname)";
-    rc = sqlite3_exec (db, sql, NULL, NULL, NULL);
-    if (rc != SQLITE_OK) {
-        g_set_error (err, YUM_DB_ERROR, YUM_DB_ERROR,
-                     "Can not create dirnames index: %s",
-                     sqlite3_errmsg (db));
-        return;
-    }
-
     sql =
         "CREATE TRIGGER remove_filelist AFTER DELETE ON packages"
         "  BEGIN"
@@ -714,6 +700,40 @@ yum_db_create_filelist_tables (sqlite3 *db, GError **err)
     if (rc != SQLITE_OK) {
         g_set_error (err, YUM_DB_ERROR, YUM_DB_ERROR,
                      "Can not create remove_filelist trigger: %s",
+                     sqlite3_errmsg (db));
+        return;
+    }
+}
+
+void
+yum_db_index_filelist_tables (sqlite3 *db, GError **err)
+{
+    int rc;
+    const char *sql;
+
+    sql = "CREATE INDEX IF NOT EXISTS keyfile ON filelist (pkgKey)";
+    rc = sqlite3_exec (db, sql, NULL, NULL, NULL);
+    if (rc != SQLITE_OK) {
+        g_set_error (err, YUM_DB_ERROR, YUM_DB_ERROR,
+                     "Can not create keyfile index: %s",
+                     sqlite3_errmsg (db));
+        return;
+    }
+
+    sql = "CREATE INDEX IF NOT EXISTS pkgId ON packages (pkgId)";
+    rc = sqlite3_exec (db, sql, NULL, NULL, NULL);
+    if (rc != SQLITE_OK) {
+        g_set_error (err, YUM_DB_ERROR, YUM_DB_ERROR,
+                     "Can not create pkgId index: %s",
+                     sqlite3_errmsg (db));
+        return;
+    }
+
+    sql = "CREATE INDEX IF NOT EXISTS dirnames ON filelist (dirname)";
+    rc = sqlite3_exec (db, sql, NULL, NULL, NULL);
+    if (rc != SQLITE_OK) {
+        g_set_error (err, YUM_DB_ERROR, YUM_DB_ERROR,
+                     "Can not create dirnames index: %s",
                      sqlite3_errmsg (db));
         return;
     }
@@ -852,24 +872,6 @@ yum_db_create_other_tables (sqlite3 *db, GError **err)
         return;
     }
 
-    sql = "CREATE INDEX keychange ON changelog (pkgKey)";
-    rc = sqlite3_exec (db, sql, NULL, NULL, NULL);
-    if (rc != SQLITE_OK) {
-        g_set_error (err, YUM_DB_ERROR, YUM_DB_ERROR,
-                     "Can not create keychange index: %s",
-                     sqlite3_errmsg (db));
-        return;
-    }
-
-    sql = "CREATE INDEX pkgId ON packages (pkgId)";
-    rc = sqlite3_exec (db, sql, NULL, NULL, NULL);
-    if (rc != SQLITE_OK) {
-        g_set_error (err, YUM_DB_ERROR, YUM_DB_ERROR,
-                     "Can not create pkgId index: %s",
-                     sqlite3_errmsg (db));
-        return;
-    }
-
     sql =
         "CREATE TRIGGER remove_changelogs AFTER DELETE ON packages"
         "  BEGIN"
@@ -880,6 +882,31 @@ yum_db_create_other_tables (sqlite3 *db, GError **err)
     if (rc != SQLITE_OK) {
         g_set_error (err, YUM_DB_ERROR, YUM_DB_ERROR,
                      "Can not create remove_changelogs trigger: %s",
+                     sqlite3_errmsg (db));
+        return;
+    }
+}
+
+void
+yum_db_index_other_tables (sqlite3 *db, GError **err)
+{
+    int rc;
+    const char *sql;
+
+    sql = "CREATE INDEX IF NOT EXISTS keychange ON changelog (pkgKey)";
+    rc = sqlite3_exec (db, sql, NULL, NULL, NULL);
+    if (rc != SQLITE_OK) {
+        g_set_error (err, YUM_DB_ERROR, YUM_DB_ERROR,
+                     "Can not create keychange index: %s",
+                     sqlite3_errmsg (db));
+        return;
+    }
+
+    sql = "CREATE INDEX IF NOT EXISTS pkgId ON packages (pkgId)";
+    rc = sqlite3_exec (db, sql, NULL, NULL, NULL);
+    if (rc != SQLITE_OK) {
+        g_set_error (err, YUM_DB_ERROR, YUM_DB_ERROR,
+                     "Can not create pkgId index: %s",
                      sqlite3_errmsg (db));
         return;
     }

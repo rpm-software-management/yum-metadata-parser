@@ -44,6 +44,7 @@ GHashTable   *yum_db_read_package_ids       (sqlite3 *db, GError **err);
 /* Primary */
 
 void          yum_db_create_primary_tables  (sqlite3 *db, GError **err);
+void          yum_db_index_primary_tables   (sqlite3 *db, GError **err);
 sqlite3_stmt *yum_db_package_prepare        (sqlite3 *db, GError **err);
 void          yum_db_package_write          (sqlite3 *db,
                                              sqlite3_stmt *handle,
@@ -67,6 +68,7 @@ void          yum_db_file_write             (sqlite3 *db,
 /* Filelists */
 
 void          yum_db_create_filelist_tables (sqlite3 *db, GError **err);
+void          yum_db_index_filelist_tables  (sqlite3 *db, GError **err);
 sqlite3_stmt *yum_db_package_ids_prepare    (sqlite3 *db, GError **err);
 void          yum_db_package_ids_write      (sqlite3 *db,
                                              sqlite3_stmt *handle,
@@ -79,6 +81,7 @@ void          yum_db_filelists_write        (sqlite3 *db,
 
 /* Other */
 void          yum_db_create_other_tables    (sqlite3 *db, GError **err);
+void          yum_db_index_other_tables     (sqlite3 *db, GError **err);
 sqlite3_stmt *yum_db_changelog_prepare      (sqlite3 *db, GError **err);
 void          yum_db_changelog_write        (sqlite3 *db,
                                              sqlite3_stmt *handle,

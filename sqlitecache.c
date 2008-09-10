@@ -37,6 +37,8 @@ typedef void (*XmlParseFn)  (const char *filename,
 
 typedef void (*WriteDbPackageFn) (UpdateInfo *update_info, Package *package);
 
+typedef void (*IndexTablesFn) (sqlite3 *db, GError **err);
+
 struct _UpdateInfo {
     sqlite3 *db;
     sqlite3_stmt *remove_handle;
@@ -55,6 +57,7 @@ struct _UpdateInfo {
     CreateTablesFn create_tables;
     WriteDbPackageFn write_package;
     XmlParseFn xml_parse;
+    IndexTablesFn index_tables;
 
     gpointer user_data;
 };
@@ -423,6 +426,10 @@ update_packages (UpdateInfo *update_info,
         goto cleanup;
     sqlite3_exec (update_info->db, "COMMIT", NULL, NULL, NULL);
 
+    update_info->index_tables (update_info->db, err);
+    if (*err)
+        goto cleanup;
+
     update_info_remove_old_entries (update_info);
     yum_db_dbinfo_update (update_info->db, checksum, err);
 
@@ -566,6 +573,7 @@ py_update_primary (PyObject *self, PyObject *args)
     info.update_info.create_tables = yum_db_create_primary_tables;
     info.update_info.write_package = write_package_to_db;
     info.update_info.xml_parse = yum_xml_parse_primary;
+    info.update_info.index_tables = yum_db_index_primary_tables;
 
     return py_update (self, args, (UpdateInfo *) &info);
 }
@@ -581,6 +589,7 @@ py_update_filelist (PyObject *self, PyObject *args)
     info.update_info.create_tables = yum_db_create_filelist_tables;
     info.update_info.write_package = write_filelist_package_to_db;
     info.update_info.xml_parse = yum_xml_parse_filelists;
+    info.update_info.index_tables = yum_db_index_filelist_tables;
 
     return py_update (self, args, (UpdateInfo *) &info);
 }
@@ -596,6 +605,7 @@ py_update_other (PyObject *self, PyObject *args)
     info.update_info.create_tables = yum_db_create_other_tables;
     info.update_info.write_package = write_other_package_to_db;
     info.update_info.xml_parse = yum_xml_parse_other;
+    info.update_info.index_tables = yum_db_index_other_tables;
 
     return py_update (self, args, (UpdateInfo *) &info);
 }
