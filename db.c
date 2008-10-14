@@ -19,6 +19,11 @@
 #include <unistd.h>
 #include "db.h"
 
+/*  We have a lot of code so we can "quickly" update the .sqlite file using
+ * the old .sqlite data and the new .xml data. However it seems to have weird
+ * edge cases where it doesn't work, rhbz 465898 etc. ... so we turn it off. */
+#define YMP_CONFIG_UPDATE_DB 0
+
 GQuark
 yum_db_error_quark (void)
 {
@@ -196,10 +201,13 @@ yum_db_open (const char *path,
                 return NULL;
                 break;
             case DB_STATUS_CHECKSUM_MISMATCH:
-                sqlite3_exec (db, "PRAGMA synchronous = 0", NULL, NULL, NULL);
-                sqlite3_exec (db, "DELETE FROM db_info", NULL, NULL, NULL);
-                return db;
-                break;
+                if (YMP_CONFIG_UPDATE_DB) {
+                    sqlite3_exec (db, "PRAGMA synchronous = 0", NULL,NULL,NULL);
+                    sqlite3_exec (db, "DELETE FROM db_info", NULL, NULL, NULL);
+                    return db;
+                    break;
+                }
+                /* FALL THROUGH */
             case DB_STATUS_VERSION_MISMATCH:
             case DB_STATUS_ERROR:
                 sqlite3_close (db);
