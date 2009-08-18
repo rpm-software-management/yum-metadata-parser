@@ -29,6 +29,7 @@ class RepodataParserSqlite:
         if not filename:
             return None
         con = sqlite.connect(filename)
+        con.text_factory = str
         if sqlite.version_info[0] > 1:
             con.row_factory = sqlite.Row
         cur = con.cursor()
