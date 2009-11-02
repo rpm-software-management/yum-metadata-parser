@@ -455,6 +455,15 @@ yum_db_index_primary_tables (sqlite3 *db, GError **err)
         return;
     }
 
+    sql = "CREATE INDEX IF NOT EXISTS pkgfiles ON files (pkgKey)";
+    rc = sqlite3_exec (db, sql, NULL, NULL, NULL);
+    if (rc != SQLITE_OK) {
+        g_set_error (err, YUM_DB_ERROR, YUM_DB_ERROR,
+                     "Can not create index on files table: %s",
+                     sqlite3_errmsg (db));
+        return;
+    }
+
     const char *deps[] = { "requires", "provides", "conflicts", "obsoletes", NULL };
     int i;
 
