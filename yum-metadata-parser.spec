@@ -2,7 +2,7 @@
 
 Summary: A fast metadata parser for yum
 Name: yum-metadata-parser
-Version: 1.1.3
+Version: 1.1.4
 Release: 1
 Source0: %{name}-%{version}.tar.gz
 License: GPL
@@ -38,8 +38,16 @@ Fast metadata parser for yum implemented in C.
 %{python_sitelib_platform}/sqlitecachec.py
 %{python_sitelib_platform}/sqlitecachec.pyc
 %{python_sitelib_platform}/sqlitecachec.pyo
+%{python_sitelib_platform}/*egg-info
+
 
 %changelog
+* Thu Jan  7 2010 Seth Vidal <skvidal at fedoraproject.org>
+- 1.1.4 b/c I made a mistake
+
+* Thu Jan  7 2010 Seth Vidal <skvidal at fedoraproject.org>
+- add the egginfo support for python 2.5 and above
+
 * Thu Jan  7 2010 Seth Vidal <skvidal at fedoraproject.org> 
 - bump the version number for an official release
 

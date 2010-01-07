@@ -1,3 +1,57 @@
+2010-01-07  Seth Vidal <skvidal@fedoraproject.org>
+
+	* setup.py, yum-metadata-parser.spec: mark as 1.1.3
+
+2009-11-02  James Antill <james@and.org>
+
+	* db.c: Add an index on files.pkgKey ... needed for .simpleFiles()
+	to not suck
+
+2009-08-18  Mike Bonnet <mikeb@redhat.com>
+
+	* sqlitecachec.py: configure sqlite to return utf-8-encoded strs
+	instead of unicode objects  sqlite by default returns all text as
+	unicode objects, and this causes a number of problems when merging
+	repos which contain utf-8 characters in Provides or Requires (as the
+	current F11/F12 repos do).  For a testcase, try merging 2 F12 repos,
+	and you should see it fail with a UnicodeDecodeError in
+	packages.py:_dump_pco().  This patch instructs sqlite to return all
+	text as utf-8-encoded strs, which avoids these encoding issues.
+
+2008-10-14  James Antill <james@and.org>
+
+	* db.c: Turn off .sqlite updating from new .xml data, bug 465898
+
+2008-09-10  Seth Vidal <skvidal@fedoraproject.org>
+
+	* db.c, db.h, sqlitecache.c: commit patches from Ville Skyttä to
+	make indexes after the data has been inserted. Closed rh bug 461403
+
+
+2008-09-10  Seth Vidal <skvidal@fedoraproject.org>
+
+	* sqlitecache.c: apply patch to improve error messages from Ville
+	Skyttä from rh bug 461405
+
+2008-01-25  Seth Vidal <skvidal@fedoraproject.org>
+
+	* sqlitecachec.py: apply patch from Panu Matilainen to setup the db
+	for exclusive lock write access.  closes rh bug 353171
+
+2007-11-27  Paul Nasrat <pauln@truemesh.com>
+
+	* sqlitecache.c: Fix segmentation fault experienced with a malformed
+	primary.xml
+
+2007-08-29  Seth Vidal <skvidal@fedoraproject.org>
+
+	* yum-metadata-parser.spec: remove %dist which doesn't really belong
+	anyway
+
+2007-08-24  Seth Vidal <skvidal@fedoraproject.org>
+
+	* ChangeLog: changelog merge
+
 2007-08-24  Seth Vidal <skvidal@fedoraproject.org>
 
 	* setup.py, yum-metadata-parser.spec: bump version number
@@ -39,195 +93,6 @@
 
 2007-05-30  James Bowes <jbowes@redhat.com>
 
-	* xml-parser.c: Get SAX error callbacks for filelists and other to
-	use the right context type.
-
-2007-05-16  Paul Nasrat <pnasrat@redhat.com>
-
-	* ChangeLog: Update ChangeLog
-
-2007-05-16  Paul Nasrat <pnasrat@redhat.com>
-
-	* AUTHORS, ChangeLog, setup.py, yum-metadata-parser.spec: Bump to
-	version 1.1.1 to allow multiple dbversions
-
-2007-05-16  Paul Nasrat <pnasrat@redhat.com>
-
-	* sqlitecache.c, sqlitecachec.py: Add DBVERSION attribute Jeremy
-	Katzj <katzj@redhat.com>
-
-2007-04-27  Seth Vidal <skvidal@linux.duke.edu>
-
-	* setup.py, yum-metadata-parser.spec: bump version to 1.1.0 b/c of
-	the dbversion change
-
-2007-04-10  James Bowes <jbowes@redhat.com>
-
-	* db.c, db.h, package.h, xml-parser.c: Bump database version to 10
-	build_* and time_* values are stored as ints, rather than text, and
-	checksum_value has been dropped, as this is the same value as pkgId.
-
-
-2007-04-07  James Bowes <jbowes@redhat.com>
-
-	* xml-parser.c: Reduce some code duplication in xml-parser
-
-2007-04-04  Seth Vidal <skvidal@linux.duke.edu>
-
-	* ChangeLog: merge changelog
-
-2007-04-04  Seth Vidal <skvidal@linux.duke.edu>
-
-	* setup.py, yum-metadata-parser.spec: mark as 1.0.4
-
-2007-04-03  James Bowes <jbowes@redhat.com>
-
-	* db.c: Create a pkgKey index for provides, requires, conflicts, and
-	obsoletes.  Originally suggested by Florian Festi on yum-devel.
-
-2007-02-18  James Bowes <jbowes@redhat.com>
-
-	* db.c, db.h, package.h, sqlitecache.c, xml-parser.c: Apply patch
-	from Florian Festi to include Prereqs.
-
-2007-01-07  Seth Vidal <skvidal@linux.duke.edu>
-
-	* ChangeLog: check in changelog
-
-2007-01-07  Seth Vidal <skvidal@linux.duke.edu>
-
-	* setup.py, yum-metadata-parser.spec: mark as 1.0.3
-
-2007-01-04  James Bowes <jbowes@redhat.com>
-
-	* ChangeLog, sqlitecache.c: 2007-12-04 13:10 jbowes  	*
-	sqlitecache.c: Never use the default glib log handler. This way,
-	when 	-d0 is passed, we won't output to the glib log handler (since
-	nothing 	should be displayed at all).
-
-2006-12-05  Jeremy Katz <katzj@redhat.com>
-
-	* sqlitecachec.py: support newer pysqlite as included in python 2.5
-
-
-2006-11-23  James Bowes <jbowes@redhat.com>
-
-	* ChangeLog, sqlitecache.c: Use structs and function pointers to
-	reduce code duplication.
-
-2006-11-23  James Bowes <jbowes@redhat.com>
-
-	* ChangeLog, sqlitecache.c, sqlitecachec.py: Display repoid while
-	populating the cache.
-
-2006-07-12  Seth Vidal <skvidal@linux.duke.edu>
-
-	* ChangeLog, setup.py, yum-metadata-parser.spec: version bump check
-	in changelog
-
-2006-07-10  Paul Nasrat <pnasrat@redhat.com>
-
-	* db.c, db.h: Move to dbversion 9 - add pre for requires
-
-2006-06-19  Seth Vidal <skvidal@linux.duke.edu>
-
-	* yum-metadata-parser.spec: update specfile
-
-2006-06-19  Seth Vidal <skvidal@linux.duke.edu>
-
-	* setup.py: bump second minor version number
-
-2006-06-15  Paul Nasrat <pnasrat@redhat.com>
-
-	* xml-parser.c: Actually populate location_base attribute - used for
-	cd installs
-
-2006-06-14  Paul Nasrat <pnasrat@redhat.com>
-
-	* db.c: Fix the order to correspond with the schema
-
-2006-06-06  Seth Vidal <skvidal@linux.duke.edu>
-
-	* MANIFEST.in: add spec file in MANIFEST.in as Terje mentioned
-
-2006-06-06  Jeremy Katz <katzj@redhat.com>
-
-	* yum-metadata-parser.spec: add pkgconfig as a BR
-
-2006-06-06  Jeremy Katz <katzj@redhat.com>
-
-	* sqlitecachec.py: doesn't actually have anything to run
-
-2006-06-05  Jeremy Katz <katzj@redhat.com>
-
-	* yum-metadata-parser.spec: glib2, not glib
-
-2006-06-05  Tambet Ingo <tambet@ximian.com>
-
-	* ChangeLog, yum-metadata-parser.spec: 2006-06-05  Tambet Ingo
-	<tambet@ximian.com>  	* yum-metadata-parser.spec: Relax the required
-	yum version a bit, the 	next release from the 2.6 branch works with
-	this as well.
-
-2006-06-05  Tambet Ingo <tambet@ximian.com>
-
-	* ChangeLog, MANIFEST.in, setup.py, yum-metadata-parser.spec: 
-	2006-06-05  Tambet Ingo  <tambet@ximian.com>  	Patch from Terje
-	Rosten <terje.rosten@ntnu.no>  	* setup.py: Set the name of the
-	module correctly.  	* yum-metadata-parser.spec: Implement.  	*
-	MANIFEST.in: New file.
-
-2006-05-24  Tambet Ingo <tambet@ximian.com>
-
-	* ChangeLog, db.c, debug.c, debug.h, setup.py, sqlitecache.c,
-	xml-parser.c: 2006-05-24  Tambet Ingo  <tambet@ximian.com>  	*
-	debug.[ch]: Remove. No need for our own logging framework, glib
-	already has one.  	*.[ch]: Use glib messaging/logging functions
-	instead of debug_*.  	* sqlitecache.c: A small cleanup to get rid of
-	some awfully similar 	looking code.
-
-2006-05-24  Tambet Ingo <tambet@ximian.com>
-
-	* ChangeLog, db.c, sqlitecache.c: 2006-05-24  Tambet Ingo
-	<tambet@ximian.com>  	* ChangeLog: Start keeping change log.  	*
-	sqlitecache.c (update_primary): Nullify the update info structure,
-	so we don't find garbage from it on freeing. 	(update_filelist):
-	Ditto. 	(update_other): Ditto.  	* db.c (yum_db_open): Delete the
-	cache file if the dbversion 	does not match.
-
-2006-05-24  Tambet Ingo <tambet@ximian.com>
-
-	* AUTHORS, README: 2006-05-24  Tambet Ingo  <tambet@ximian.com>  	*
-	AUTHORS: Add.  	* README: Add.
-
-2006-05-24  Tambet Ingo <tambet@ximian.com>
-
-	* .cvsignore: 2006-05-24  Tambet Ingo  <tambet@ximian.com>  	*
-	.cvsignore: Add.
-
-2006-05-24  Tambet Ingo <tambet@ximian.com>
-
-	* db.c, db.h, setup.py, sqlitecache.c, sqlitecache.py,
-	sqlitecachec.py, xml-parser.c, xml-parser.h: 2006-05-24  Tambet Ingo
-	<tambet@ximian.com>  	* Implement the database opening correctly,
-	just like yum does.  	* Implement raising the correct exception if
-	something goes wrong.  	* Some small performance optimizations:
-	Don't copy uninteresting XML 	characters to the local buffer, use
-	typed python object initialization 	functions instead of
-	BuildValue(), and add a dedicated string chunk to 	package ids
-	collection instead of doing one malloc per id.  	* Rename
-	sqlitecache.py to sqlitecachec.py
-
-2006-05-16  Seth Vidal <skvidal@linux.duke.edu>
-
-	* debug.c, debug.h, sqlitecache.c, sqlitecache.py, xml-parser.c,
-	xml-parser.h: committing Tambet's patch:  "Here's a patch to fix the
-	logging output and to implement the progress bar callback. The
-	previous patch that implemented logging always added a log callback,
-	so it worked correctly for the first time, but every other time the
-	output callback was added and a duplicate log line was printed. "
-
-2006-05-11  Seth Vidal <skvidal@linux.duke.edu>
-
-	* Initial revision
+	* Get SAX error callbacks for filelists and other to use the right
+	context type.
 
