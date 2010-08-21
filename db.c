@@ -550,9 +550,9 @@ yum_db_package_write (sqlite3 *db, sqlite3_stmt *handle, Package *p)
     sqlite3_bind_int  (handle, 17, p->rpm_header_start);
     sqlite3_bind_int  (handle, 18, p->rpm_header_end);
     sqlite3_bind_text (handle, 19, p->rpm_packager, -1, SQLITE_STATIC);
-    sqlite3_bind_int  (handle, 20, p->size_package);
-    sqlite3_bind_int  (handle, 21, p->size_installed);
-    sqlite3_bind_int  (handle, 22, p->size_archive);
+    sqlite3_bind_int64  (handle, 20, p->size_package);
+    sqlite3_bind_int64  (handle, 21, p->size_installed);
+    sqlite3_bind_int64  (handle, 22, p->size_archive);
     sqlite3_bind_text (handle, 23, p->location_href, -1, SQLITE_STATIC);
     sqlite3_bind_text (handle, 24, p->location_base, -1, SQLITE_STATIC);
     sqlite3_bind_text (handle, 25, p->checksum_type, -1, SQLITE_STATIC);
