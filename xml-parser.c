@@ -185,11 +185,11 @@ primary_parser_package_start (PrimarySAXContext *ctx,
             value = attrs[++i];
 
             if (!strcmp (attr, "package"))
-                p->size_package = strtol(value, NULL, 10);
+                p->size_package = strtoll(value, NULL, 10);
             else if (!strcmp (attr, "installed"))
-                p->size_installed = strtol(value, NULL, 10);
+                p->size_installed = strtoll(value, NULL, 10);
             else if (!strcmp (attr, "archive"))
-                p->size_archive = strtol(value, NULL, 10);
+                p->size_archive = strtoll(value, NULL, 10);
         }
     }
 
