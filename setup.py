@@ -1,16 +1,16 @@
-import os, string
+import os
 from distutils.core import setup, Extension
 
 pc = os.popen("pkg-config --cflags-only-I glib-2.0 libxml-2.0 sqlite3", "r")
-includes = map(lambda x:x[2:], string.split(pc.readline()))
+includes = list(map(lambda x:x[2:], pc.readline().split()))
 pc.close()
 
 pc = os.popen("pkg-config --libs-only-l glib-2.0 libxml-2.0 sqlite3", "r")
-libs = map(lambda x:x[2:], string.split(pc.readline()))
+libs = list(map(lambda x:x[2:], pc.readline().split()))
 pc.close()
 
 pc = os.popen("pkg-config --libs-only-L glib-2.0 libxml-2.0 sqlite3", "r")
-libdirs = map(lambda x:x[2:], string.split(pc.readline()))
+libdirs = list(map(lambda x:x[2:], pc.readline().split()))
 pc.close()
 
 module = Extension('_sqlitecache',
