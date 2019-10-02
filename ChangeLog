@@ -1,3 +1,7 @@
+2019-10-02  KOLANICH <KOLANICH@users.noreply.github.com>
+
+	* Python 3 compatibility, building with setuptools (allows bdist_wheel and fetching version from git)
+
 2010-01-07  Seth Vidal <skvidal@fedoraproject.org>
 
 	* setup.py, yum-metadata-parser.spec: mark as 1.1.3
